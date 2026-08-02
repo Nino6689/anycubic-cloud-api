@@ -89,3 +89,15 @@ class AnycubicMQTTUnhandledData(AnycubicDataParsingError):
     @property
     def unhandled_mqtt_state(self) -> str | None:
         return self._unhandled_mqtt_state
+
+
+class AnycubicLANError(AnycubicAPIError):
+    pass
+
+
+class AnycubicLANCloudModeError(AnycubicLANError):
+    pass
+
+
+class AnycubicLANUnsupportedError(AnycubicLANError):
+    pass

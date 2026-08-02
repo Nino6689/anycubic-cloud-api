@@ -300,6 +300,7 @@ class AnycubicPrinter:
         )
 
     def _set_multi_color_box(self, multi_color_box: list[dict[str, Any]] | dict[str, Any] | None) -> None:
+        known_boxes = getattr(self, "_multi_color_box", None)
         self._multi_color_box: list[AnycubicMultiColorBox] | None = None
         try:
             if multi_color_box is None or isinstance(multi_color_box, list):
@@ -314,6 +315,19 @@ class AnycubicPrinter:
                         self._multi_color_box.append(ace)
                     else:
                         raise AnycubicDataParsingError(ErrorsDataParsing.ace.format(multi_color_box))
+
+                # A report about one box is not a statement that the others
+                # have gone. With two ACE units attached, updates often carry
+                # only the one that changed, and replacing the list wholesale
+                # made the second unit disappear until the next full refresh.
+                if (
+                    known_boxes is not None
+                    and len(known_boxes) > len(self._multi_color_box)
+                ):
+                    updated = {box.box_id: box for box in self._multi_color_box}
+                    self._multi_color_box = list([
+                        updated.get(box.box_id, box) for box in known_boxes
+                    ])
 
         except Exception as e:
             self._initialisation_error = True
@@ -962,20 +976,33 @@ class AnycubicPrinter:
             return
         elif action in ['start', 'update'] and state == 'updated':
             data = payload['data']
-            if self.parameter:
+            # Not every printer sends every field. An open-frame machine has no
+            # chamber, a progress-only update carries no temperatures at all,
+            # and one missing key used to throw away the whole update -- so
+            # each is applied only if it is actually there.
+            settings = data.get('settings') or {}
+
+            if (
+                self.parameter
+                and 'curr_hotbed_temp' in data
+                and 'curr_nozzle_temp' in data
+            ):
                 self.parameter.update_current_temps(
                     data['curr_hotbed_temp'],
                     data['curr_nozzle_temp'],
                 )
-            self._fan_speed = int(data['settings']['fan_speed_pct'])
-            self._print_speed_pct = int(data['settings']['print_speed_pct'])
-            self._print_speed_mode = int(data['settings']['print_speed_mode'])
-            self._update_latest_project_target_temps(
-                project_id,
-                data['settings']['target_hotbed_temp'],
-                data['settings']['target_nozzle_temp'],
-            )
-            data['settings']
+            if 'fan_speed_pct' in settings:
+                self._fan_speed = int(settings['fan_speed_pct'])
+            if 'print_speed_pct' in settings:
+                self._print_speed_pct = int(settings['print_speed_pct'])
+            if 'print_speed_mode' in settings:
+                self._print_speed_mode = int(settings['print_speed_mode'])
+            if 'target_hotbed_temp' in settings and 'target_nozzle_temp' in settings:
+                self._update_latest_project_target_temps(
+                    project_id,
+                    settings['target_hotbed_temp'],
+                    settings['target_nozzle_temp'],
+                )
             return
         elif action in ['start', 'stop'] and state in ['failed']:
             err_msg = payload.get('msg')

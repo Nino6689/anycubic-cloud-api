@@ -341,3 +341,30 @@ class ErrorsMQTTUpdate:
     peripherals = str(
         "Unknown peripherals data."
     )
+
+
+class ErrorsLAN:
+    unreachable = str(
+        "Could not reach {} on the local network. Check the address, and that "
+        "LAN Mode is switched on at the printer's panel."
+    )
+    printer_in_cloud_mode = str(
+        "The printer is in cloud mode. Switch LAN Mode on at the printer: "
+        "Settings -> Network -> LAN Mode."
+    )
+    unsupported_handshake = str(
+        "This printer does not use the signed LAN handshake (Kobra 3 / S1 "
+        "generation). Older models are not supported over LAN yet."
+    )
+    bad_response = str(
+        "The printer sent a local response that could not be understood."
+    )
+    control_rejected = str(
+        "The printer refused the local control request: {}"
+    )
+    decrypt_failed = str(
+        "Could not decrypt the printer's local broker credentials."
+    )
+    not_connected = str(
+        "Not connected to the printer on the local network."
+    )
