@@ -304,6 +304,39 @@ class AnycubicMachineExternalShelves:
         self._status_type = data['status_type']
         self._current_status = data['current_status']
 
+    @property
+    def id(self) -> int:
+        return self._id
+
+    @property
+    def material_type(self) -> str | None:
+        """Filament type in the external holder, or None if it is empty."""
+        return self._type or None
+
+    @property
+    def color(self) -> list[int]:
+        return list(self._color)
+
+    @property
+    def color_hex(self) -> str | None:
+        """Colour as #RRGGBB, or None if the holder reports no colour."""
+        if len(self._color) < 3:
+            return None
+
+        return "#{:02X}{:02X}{:02X}".format(*self._color[:3])
+
+    @property
+    def loaded(self) -> bool:
+        return bool(self._loaded)
+
+    @property
+    def status_type(self) -> int:
+        return self._status_type
+
+    @property
+    def current_status(self) -> int:
+        return self._current_status
+
     def __repr__(self) -> str:
         return (
             f"AnycubicMachineExternalShelves(id={self._id}, type={self._type}, color={self._color}, loaded={self._loaded}, "
