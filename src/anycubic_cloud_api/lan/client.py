@@ -46,16 +46,26 @@ from ..exceptions.error_strings import ErrorsLAN
 from ..exceptions.exceptions import AnycubicLANError
 from .handshake import AnycubicLANBroker
 
-# What the printer will answer a query for. "tempature" is the firmware's own
-# spelling on the wire and must not be corrected.
-LAN_QUERY_TYPES = (
-    "info",
-    "tempature",
-    "fan",
-    "light",
-    "multiColorBox",
-    "print",
-)
+# What the printer will answer, and the action each one wants. Confirmed
+# against a Kobra S1 on firmware 2.7.2.7:
+#
+# * "tempature" is the firmware's own spelling on the wire -- correcting it
+#   gets no reply;
+# * multiColorBox answers to "getInfo" and stays silent for "query", which is
+#   the difference between having ACE data and having none;
+# * "print" answers only while a job exists, so it is asked for anyway and
+#   simply produces nothing when idle.
+LAN_QUERY_ACTIONS = {
+    "info": "query",
+    "tempature": "query",
+    "fan": "query",
+    "light": "query",
+    "multiColorBox": "getInfo",
+    "print": "query",
+    "aiSettings": "query",
+}
+
+LAN_QUERY_TYPES = tuple(LAN_QUERY_ACTIONS)
 
 LAN_CONNECT_TIMEOUT = 15
 LAN_KEEPALIVE = 60
@@ -257,7 +267,9 @@ class AnycubicLANClient:
 
     def query(self, message_type: str) -> None:
         """Ask the printer to report one kind of state."""
-        self.publish(message_type, {"type": message_type, "action": "query", "data": {}})
+        action = LAN_QUERY_ACTIONS.get(message_type, "query")
+
+        self.publish(message_type, {"type": message_type, "action": action, "data": {}})
 
     def query_all(self) -> None:
         """Ask for everything the printer will report."""

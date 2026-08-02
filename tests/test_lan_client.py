@@ -10,7 +10,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from anycubic_cloud_api.exceptions.exceptions import AnycubicLANError
-from anycubic_cloud_api.lan.client import LAN_QUERY_TYPES, AnycubicLANClient
+from anycubic_cloud_api.lan.client import (
+    LAN_QUERY_ACTIONS,
+    LAN_QUERY_TYPES,
+    AnycubicLANClient,
+)
 from anycubic_cloud_api.lan.handshake import AnycubicLANBroker
 
 BROKER = AnycubicLANBroker(
@@ -125,9 +129,22 @@ class TestPublishing:
         assert topic.endswith("/web/printer/20025/DEVICE1234/multiColorBox")
         assert json.loads(body) == {
             "type": "multiColorBox",
-            "action": "query",
+            "action": "getInfo",
             "data": {},
         }
+
+    def test_the_ace_needs_getinfo_not_query(self):
+        """Confirmed on a Kobra S1: "query" gets no reply at all."""
+        assert LAN_QUERY_ACTIONS["multiColorBox"] == "getInfo"
+        assert LAN_QUERY_ACTIONS["info"] == "query"
+
+    def test_an_unknown_type_falls_back_to_query(self):
+        client, _ = make_client()
+        client._client = MagicMock()
+
+        client.query("somethingNew")
+
+        assert json.loads(client._client.publish.call_args.args[1])["action"] == "query"
 
     def test_query_all_asks_for_every_type(self):
         client, _ = make_client()
