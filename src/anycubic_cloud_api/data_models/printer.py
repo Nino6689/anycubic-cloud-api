@@ -2616,6 +2616,22 @@ class AnycubicPrinter:
             slot_index_list=slot_index_list,
         )
 
+    async def print_local_file(
+        self,
+        file_name: str,
+        file_path: str = "",
+    ) -> str | None:
+        """Print a file already stored on the printer.
+
+        Unlike print_and_upload_*, nothing is transferred -- the file is one the
+        printer already holds, as listed by request_local_file_list.
+        """
+        return await self._api_parent._send_order_print_local_file(
+            printer=self,
+            file_name=file_name,
+            file_path=file_path,
+        )
+
     async def print_and_upload_save_in_cloud(
         self,
         full_file_path: str | None = None,

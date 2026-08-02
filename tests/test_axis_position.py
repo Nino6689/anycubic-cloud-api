@@ -77,3 +77,47 @@ class TestMqttDispatch:
             printer.process_mqtt_update(
                 "a/b/c/d/e/f/g/axis/report", self._msg(action="move")
             )
+
+
+class TestCloudFileSummary:
+    """The summary consumers see for a cloud file.
+
+    It previously carried only name and size, so there was no way to preview a
+    file or judge what printing it would cost — despite all of it already being
+    in the payload.
+    """
+
+    def _file(self, **over):
+        from anycubic_cloud_api.data_models.files import AnycubicCloudFile
+
+        base = dict(
+            id=78443457, user_id=1, post_id=1, filename="x.3mf", time=0, size=1_311_364,
+            status=1, ip="", old_filename="cup.gcode.3mf", img_status=1, device_type=1,
+            file_type=1, url="https://example/x.3mf",
+            thumbnail="https://example/preview.png", is_delete=0, update_time=0, uuid="u",
+            size_x=100.0, size_y=80.0, size_z=42.5, estimate=13338,
+            material_name="PETG", layer_height=0.2, supplies_usage=20773,
+        )
+        base.update(over)
+        return AnycubicCloudFile(**base)
+
+    def test_the_summary_carries_what_a_picker_needs(self):
+        d = self._file().data_object
+
+        assert d["name"] == "cup.gcode.3mf"
+        assert d["thumbnail"] == "https://example/preview.png"
+        assert d["estimate_seconds"] == 13338
+        assert d["material"] == "PETG"
+        assert d["layer_height"] == 0.2
+        assert d["filament_mm"] == 20773
+        assert d["dimensions"] == {"x": 100.0, "y": 80.0, "z": 42.5}
+
+    def test_size_is_still_reported_in_mb(self):
+        assert self._file().data_object["size_mb"] == pytest.approx(1.311, abs=0.001)
+
+    def test_a_file_without_a_preview_reports_none(self):
+        """An empty string would render as a broken image."""
+        assert self._file(thumbnail="").data_object["thumbnail"] is None
+
+    def test_missing_dimensions_report_none_not_a_partial_box(self):
+        assert self._file(size_x=None).data_object["dimensions"] is None

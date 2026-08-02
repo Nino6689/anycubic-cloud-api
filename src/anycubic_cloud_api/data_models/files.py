@@ -240,11 +240,51 @@ class AnycubicCloudFile:
         return self._size / 1e6
 
     @property
+    def thumbnail(self) -> str | None:
+        """Rendered preview of the sliced plate, if the cloud made one."""
+        return self._thumbnail or None
+
+    @property
+    def estimate(self) -> int | None:
+        """Estimated print time in seconds."""
+        return self._estimate
+
+    @property
+    def material_name(self) -> str | None:
+        return self._material_name or None
+
+    @property
+    def layer_height(self) -> float | None:
+        return self._layer_height
+
+    @property
+    def supplies_usage(self) -> int | None:
+        """Filament the slicer expects this job to use, in millimetres."""
+        return self._supplies_usage
+
+    @property
+    def dimensions(self) -> dict[str, float] | None:
+        """Model bounding box in millimetres."""
+        if self._size_x is None:
+            return None
+
+        return {'x': self._size_x, 'y': self._size_y, 'z': self._size_z}
+
+    @property
     def data_object(self) -> dict[str, Any]:
+        """The summary consumers see. Everything here is already in the
+        payload; it was previously reduced to name and size, which left no way
+        to preview a file or judge what it would cost to print."""
         return {
             'id': self.id,
             'name': self.old_filename,
             'size_mb': self.size_mb,
+            'thumbnail': self.thumbnail,
+            'estimate_seconds': self.estimate,
+            'material': self.material_name,
+            'layer_height': self.layer_height,
+            'filament_mm': self.supplies_usage,
+            'dimensions': self.dimensions,
         }
 
     def __repr__(self) -> str:
