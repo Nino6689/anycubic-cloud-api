@@ -282,6 +282,23 @@ class AnycubicPrinter:
             else:
                 raise AnycubicDataParsingError(ErrorsDataParsing.udisk_file_list.format(file_list))
 
+    def _log_parse_failure(self, field: str, value: Any, error: Exception) -> None:
+        """Record a payload section that could not be parsed.
+
+        These are swallowed when ignore_init_errors is set, so without this the
+        only symptom is a missing device.
+        """
+        logger = getattr(self._api_parent, "_log_to_warn", None)
+
+        if logger is None:
+            return
+
+        logger(
+            f"Could not parse '{field}' for printer {self._id}; "
+            f"anything it provides will be missing. Error: {error}. "
+            f"Payload: {value}"
+        )
+
     def _set_multi_color_box(self, multi_color_box: list[dict[str, Any]] | dict[str, Any] | None) -> None:
         self._multi_color_box: list[AnycubicMultiColorBox] | None = None
         try:
@@ -300,6 +317,10 @@ class AnycubicPrinter:
 
         except Exception as e:
             self._initialisation_error = True
+            # Swallowing this leaves the ACE list empty, which presents as
+            # "no multi-colour box attached" with nothing in the log to explain
+            # it -- indistinguishable from a printer that genuinely has none.
+            self._log_parse_failure("multi_color_box", multi_color_box, e)
             if not self._ignore_init_errors:
                 raise e
 

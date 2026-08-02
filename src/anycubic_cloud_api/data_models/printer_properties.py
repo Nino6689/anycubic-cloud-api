@@ -753,18 +753,23 @@ class AnycubicMultiColorBox:
             return None
 
         return cls(
+            # Only id and slots define an ACE. Everything else is reported
+            # inconsistently across models -- an external ACE Pro on one printer
+            # does not send the same keys as a built-in Gen 2 on another -- and
+            # a single missing key used to throw, which was swallowed upstream
+            # and presented as "no multi-colour box attached".
             id=data['id'],
-            status=data['status'],
-            model_id=data['model_id'],
-            auto_feed=data['auto_feed'],
-            loaded_slot=data['loaded_slot'],
-            feed_status=data['feed_status'],
-            temp=data['temp'],
+            status=data.get('status', 0),
+            model_id=data.get('model_id', 0),
+            auto_feed=data.get('auto_feed', 0),
+            loaded_slot=data.get('loaded_slot', -1),
+            feed_status=data.get('feed_status'),
+            temp=data.get('temp', 0),
             humidity=data.get('humidity'),
-            drying_status=data['drying_status'],
+            drying_status=data.get('drying_status'),
             curr_nozzle_temp=data.get('curr_nozzle_temp'),
             target_nozzle_temp=data.get('target_nozzle_temp'),
-            slots=data['slots'],
+            slots=data.get('slots') or [],
         )
 
     @property

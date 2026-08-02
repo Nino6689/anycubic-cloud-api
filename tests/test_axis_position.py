@@ -121,3 +121,60 @@ class TestCloudFileSummary:
 
     def test_missing_dimensions_report_none_not_a_partial_box(self):
         assert self._file(size_x=None).data_object["dimensions"] is None
+
+
+class TestAceParsingTolerance:
+    """An ACE that reports fewer keys must still be detected.
+
+    Reported on a Kobra 3 V2 with an external ACE Pro (issue #3): the printer
+    advertised MULTI_COLOR_BOX yet no ACE device appeared. The parser demanded
+    nine keys, and one missing key raised — which the printer setup swallowed,
+    leaving an empty ACE list indistinguishable from a printer with no ACE.
+    """
+
+    SLOTS = [{"index": 0, "sku": "", "type": "PLA", "color": [1, 2, 3],
+              "status": 5, "edit_status": 1}]
+
+    def _printer(self, box, logs=None):
+        from unittest.mock import MagicMock
+
+        from anycubic_cloud_api.data_models.printer import AnycubicPrinter
+
+        parent = MagicMock()
+        if logs is not None:
+            parent._log_to_warn = logs.append
+        return AnycubicPrinter(
+            api_parent=parent, machine_type=20027, machine_name="x", id=7,
+            multi_color_box=box, ignore_init_errors=True,
+        )
+
+    def test_a_full_payload_still_parses(self):
+        """The shape a Kobra S1 sends, unchanged."""
+        box = [{
+            "id": 1, "status": 1, "temp": 33, "humidity": 0.0, "model_id": 40001,
+            "auto_feed": 1, "loaded_slot": -1,
+            "feed_status": {"code": 200, "type": -1, "current_status": -1, "slot_index": -1},
+            "drying_status": {"status": 0, "duration": 0, "target_temp": 0, "remain_time": 0},
+            "slots": self.SLOTS,
+        }]
+
+        assert self._printer(box).connected_ace_units == 1
+
+    def test_only_id_and_slots_are_required(self):
+        """Everything else is reported inconsistently across models."""
+        printer = self._printer([{"id": 0, "slots": self.SLOTS}])
+
+        assert printer.connected_ace_units == 1
+        assert printer.primary_multi_color_box_spool_info_object[0]["material_type"] == "PLA"
+
+    def test_no_ace_is_still_no_ace(self):
+        assert self._printer(None).connected_ace_units == 0
+
+    def test_an_unparseable_payload_says_so(self):
+        """Silence here reads as 'no ACE attached' and wastes everyone's time."""
+        logs: list = []
+        printer = self._printer([{"no_id_at_all": True}], logs=logs)
+
+        assert printer.connected_ace_units == 0
+        assert logs, "a payload that cannot be parsed must leave a trace"
+        assert "multi_color_box" in logs[0]
