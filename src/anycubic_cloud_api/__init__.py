@@ -13,6 +13,7 @@ from .const.enums import (
     AnycubicPrintStatus,
 )
 from .data_models.printer import AnycubicPrinter
+from .data_models.printer_properties import AnycubicAxisPosition
 from .data_models.project import AnycubicProject
 from .exceptions.exceptions import (
     AnycubicAPIError,
@@ -31,9 +32,10 @@ from .exceptions.exceptions import (
 )
 from .models.auth import AnycubicAuthentication, AnycubicAuthMode
 
-__version__ = "0.1.0"
+__version__ = "0.1.2"
 
 __all__ = [
+    "AnycubicAxisPosition",
     "AnycubicAPI",
     "AnycubicAPIError",
     "AnycubicAPIParsingError",

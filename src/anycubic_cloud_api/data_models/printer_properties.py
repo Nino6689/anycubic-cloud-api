@@ -344,6 +344,47 @@ class AnycubicMachineExternalShelves:
         )
 
 
+class AnycubicAxisPosition:
+    """Where the print head currently is, in millimetres."""
+
+    __slots__ = ("_x", "_y", "_z")
+
+    def __init__(self, x: float, y: float, z: float) -> None:
+        self._x = float(x)
+        self._y = float(y)
+        self._z = float(z)
+
+    @classmethod
+    def from_json(cls, data: dict[str, Any] | None) -> AnycubicAxisPosition | None:
+        if not data:
+            return None
+
+        coords = data.get("coordinates") if "coordinates" in data else data
+
+        if not isinstance(coords, dict):
+            return None
+
+        try:
+            return cls(x=coords["x"], y=coords["y"], z=coords["z"])
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    @property
+    def x(self) -> float:
+        return self._x
+
+    @property
+    def y(self) -> float:
+        return self._y
+
+    @property
+    def z(self) -> float:
+        return self._z
+
+    def __repr__(self) -> str:
+        return f"AnycubicAxisPosition(x={self._x}, y={self._y}, z={self._z})"
+
+
 class AnycubicFeedStatus:
     __slots__ = (
         "_code",

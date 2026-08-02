@@ -28,6 +28,7 @@ from ..helpers.helpers import (
 from .consumable import AnycubicConsumableData
 from .files import AnycubicFile
 from .printer_properties import (
+    AnycubicAxisPosition,
     AnycubicMachineColorInfo,
     AnycubicMachineData,
     AnycubicMachineExternalShelves,
@@ -95,6 +96,7 @@ class AnycubicPrinter:
         "_tools",
         "_multi_color_box_fw_version",
         "_external_shelves",
+        "_axis_position",
         "_multi_color_box",
         "_latest_project",
         "_fan_speed",
@@ -201,6 +203,7 @@ class AnycubicPrinter:
         self._set_tools(tools)
         self._set_multi_color_box_fw_version(multi_color_box_fw_version)
         self._set_external_shelves(external_shelves)
+        self._axis_position: AnycubicAxisPosition | None = None
         self._set_multi_color_box(multi_color_box)
 
         self._latest_project: AnycubicProject | None = None
@@ -781,6 +784,30 @@ class AnycubicPrinter:
         else:
             raise AnycubicMQTTUnknownUpdate(ErrorsMQTTUpdate.ota_printer)
 
+    def _process_mqtt_update_axis(
+        self,
+        action: str,
+        state: str,
+        payload: AnycubicConsumableData,
+    ) -> None:
+        if action == 'query' and state == 'done':
+            data = payload['data']
+            coords = data['coordinates']
+
+            self._axis_position = AnycubicAxisPosition(
+                x=coords['x'],
+                y=coords['y'],
+                z=coords['z'],
+            )
+
+            # Nested payloads are only released once emptied, and anything left
+            # behind raises AnycubicMQTTUnhandledData at the end of dispatch.
+            data.get('coordinates')
+
+            return
+
+        raise AnycubicMQTTUnknownUpdate(ErrorsMQTTUpdate.axis)
+
     def _process_mqtt_update_temperature(
         self,
         action: str,
@@ -1151,6 +1178,9 @@ class AnycubicPrinter:
 
         elif msg_type == 'multiColorBox':
             self._process_mqtt_update_multicolorbox(action, state, payload)
+
+        elif msg_type == 'axis':
+            self._process_mqtt_update_axis(action, state, payload)
 
         elif msg_type == 'extfilbox':
             self._process_mqtt_update_shelves(action, state, payload)
@@ -1561,6 +1591,11 @@ class AnycubicPrinter:
     @property
     def multi_color_box_fw_version(self) -> list[AnycubicMachineFirmwareInfo] | None:
         return self._multi_color_box_fw_version
+
+    @property
+    def axis_position(self) -> AnycubicAxisPosition | None:
+        """Last reported head position. None until request_axis_position runs."""
+        return self._axis_position
 
     @property
     def external_shelves(self) -> AnycubicMachineExternalShelves | None:
@@ -2720,6 +2755,10 @@ class AnycubicPrinter:
                 on_time=new_time,
             ),
         )
+
+    async def request_axis_position(self) -> None:
+        """Ask the printer for its head position. Reply arrives over MQTT."""
+        await self._api_parent._send_order_query_axis_position(printer=self)
 
     async def query_printer_options(
         self,

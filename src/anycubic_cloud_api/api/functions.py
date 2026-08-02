@@ -795,6 +795,24 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
             ),
         )
 
+    async def _send_order_query_axis_position(
+        self,
+        printer: AnycubicPrinter,
+    ) -> str | None:
+        """
+        Response is sent over MQTT as axis/query.
+        """
+        if not printer:
+            return None
+
+        return await self._send_anycubic_order(
+            order_request=AnycubicBaseProjectOrderRequest(
+                order_id=AnycubicOrderID.QUERY_AXIS_POSITION,
+                printer_id=printer.id,
+                project_id=0,
+            ),
+        )
+
     async def _send_order_get_light_status(
         self,
         printer: AnycubicPrinter,

@@ -53,6 +53,7 @@ class AnycubicOrderID(IntEnum):
     MULTI_COLOR_BOX_SET_SLOT = 1211
     MULTI_COLOR_BOX_AUTO_FEED = 1212
     MOVE_AXLE_TURN_OFF = 1213  # Not handled
+    QUERY_AXIS_POSITION = 1214  # Replies over MQTT with axis/query
     FILAMENT_CONTROL = 1215  # Not handled
     FEED_RESIN = 1224  # Not handled
     M7_AUTO_OPERATION = 1225  # Not handled

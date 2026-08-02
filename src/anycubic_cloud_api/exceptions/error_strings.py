@@ -299,6 +299,9 @@ class ErrorsCloudUpload:
 
 
 class ErrorsMQTTUpdate:
+    axis = str(
+        "Unknown axis update."
+    )
     unknown = str(
         "Unknown mqtt update, type: {0}."
     )
