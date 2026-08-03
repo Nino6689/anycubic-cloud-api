@@ -1277,12 +1277,24 @@ class AnycubicPrinter:
         self._local_firmware_version = data.get('version')
         self._local_ip = data.get('ip')
 
+        # A report arriving at all means the printer is reachable, and the
+        # cloud fields that normally drive availability are never set when
+        # there is no cloud. Without this every entity reads unavailable on a
+        # working local connection.
+        self._device_status = 1
+
+        printer_state = data.get('state')
+
+        if printer_state == 'busy':
+            self._is_printing = 2
+        elif printer_state == 'free':
+            self._is_printing = 1
+
         # Consumed but not modelled: the printer's own name and model strings
         # duplicate what the device already carries, and the project blocks are
         # covered by the print report.
         data.get('printerName')
         data.get('model')
-        data.get('state')
         data.get('project')
         data.get('last_project')
         data.get('aux_fan_speed_pct')

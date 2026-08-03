@@ -261,3 +261,38 @@ class TestQueryActionReplies:
 
     def test_a_queried_temperature_report_is_applied(self):
         apply(make_printer(), self.TEMPERATURE)
+
+
+class TestAvailabilityFromLocalReports:
+    """With no cloud, nothing else sets the fields availability is read from."""
+
+    def test_a_report_marks_the_printer_online(self):
+        printer = make_printer()
+
+        apply(printer, INFO_REPORT)
+
+        assert printer.printer_online is True
+
+    def test_free_reads_as_available_and_not_busy(self):
+        printer = make_printer()
+
+        apply(printer, INFO_REPORT)
+
+        assert printer.is_available is True
+        assert printer.is_busy is False
+
+    def test_busy_reads_as_busy(self):
+        printer = make_printer()
+        report = {**INFO_REPORT, "data": {**INFO_REPORT["data"], "state": "busy"}}
+
+        apply(printer, report)
+
+        assert printer.is_busy is True
+
+    def test_an_unknown_state_leaves_it_alone(self):
+        printer = make_printer()
+        report = {**INFO_REPORT, "data": {**INFO_REPORT["data"], "state": "wat"}}
+
+        apply(printer, report)
+
+        assert printer.printer_online is True
