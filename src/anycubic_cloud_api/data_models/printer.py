@@ -49,8 +49,34 @@ if TYPE_CHECKING:
     from .printer_properties import AnycubicDryingStatus, AnycubicMaterialMapping
 
 
+def _drain(consumable: Any) -> dict[str, Any]:
+    """Read every remaining key, returning them as a plain dict.
+
+    Reading is what marks a key consumed, and the payload contract fails loudly
+    on anything left behind -- so blocks whose keys vary by model are taken
+    wholesale rather than named one by one.
+    """
+    if not consumable:
+        return {}
+
+    drained = dict(consumable.remaining_data)
+
+    for key in list(drained):
+        consumable.get(key)
+
+    return drained
+
+
 class AnycubicPrinter:
     __slots__ = (
+        "_camera_stream_url",
+        "_file_upload_url",
+        "_features",
+        "_ai_settings",
+        "_chamber_temp",
+        "_target_chamber_temp",
+        "_local_firmware_version",
+        "_local_ip",
         "_ignore_init_errors",
         "_initialisation_error",
         "_api_parent",
@@ -1188,6 +1214,134 @@ class AnycubicPrinter:
                 'brightness': int(light.get('brightness') or 0),
             }
 
+
+    def _process_mqtt_update_info(
+        self,
+        action: str,
+        state: str,
+        payload: AnycubicConsumableData,
+    ) -> None:
+        """A whole-printer snapshot.
+
+        Only the local connection sends this; over the cloud the same ground is
+        covered by the separate status, temperature and fan reports. It is the
+        only place the printer names its own stream and upload endpoints, and
+        the only place it lists which features it physically has.
+        """
+        data = payload['data']
+
+        if not data:
+            return
+
+        urls = data.get('urls')
+
+        if urls:
+            self._camera_stream_url = urls.get('rtspUrl')
+            self._file_upload_url = urls.get('fileUploadurl')
+
+        self._features = _drain(data.get('features')) or self.features
+
+        temp = data.get('temp')
+
+        if temp:
+            if self.parameter:
+                self.parameter.update_current_temps(
+                    temp.get('curr_hotbed_temp'),
+                    temp.get('curr_nozzle_temp'),
+                )
+            # A Kobra S1 reports chamber temperatures of zero because it has no
+            # chamber sensor, so they are kept raw rather than turned into an
+            # always-zero entity.
+            self._chamber_temp = temp.get('curr_chamber_temp')
+            self._target_chamber_temp = temp.get('target_chamber_temp')
+            _drain(temp)
+
+        if 'fan_speed_pct' in data:
+            self._fan_speed = int(data['fan_speed_pct'])
+        if 'print_speed_mode' in data:
+            self._print_speed_mode = int(data['print_speed_mode'])
+
+        self._local_firmware_version = data.get('version')
+        self._local_ip = data.get('ip')
+
+        # Consumed but not modelled: the printer's own name and model strings
+        # duplicate what the device already carries, and the project blocks are
+        # covered by the print report.
+        data.get('printerName')
+        data.get('model')
+        data.get('state')
+        data.get('project')
+        data.get('last_project')
+        data.get('aux_fan_speed_pct')
+        data.get('box_fan_level')
+        _drain(data)
+
+    def _process_mqtt_update_ai_settings(
+        self,
+        action: str,
+        state: str,
+        payload: AnycubicConsumableData,
+    ) -> None:
+        """Foreign-object and first-layer detection settings."""
+        data = payload['data']
+
+        if not data:
+            return
+
+        self._ai_settings = _drain(data.get('ai_settings')) or self.ai_settings
+
+        _drain(data)
+
+
+    @property
+    def camera_stream_url(self) -> str | None:
+        """Where the printer serves its camera, when it says.
+
+        Only reported over the local connection.
+        """
+        return getattr(self, '_camera_stream_url', None)
+
+    @property
+    def file_upload_url(self) -> str | None:
+        """Signed endpoint for uploading gcode straight to the printer."""
+        return getattr(self, '_file_upload_url', None)
+
+    @property
+    def features(self) -> dict[str, Any]:
+        """What this model says it can physically do.
+
+        Reported only over the local connection, and the most reliable way to
+        tell models apart without owning one.
+        """
+        return dict(getattr(self, '_features', {}) or {})
+
+    @property
+    def ai_settings(self) -> dict[str, Any]:
+        """Foreign-object / first-layer detection settings."""
+        return dict(getattr(self, '_ai_settings', {}) or {})
+
+    @property
+    def ai_detection_enabled(self) -> bool | None:
+        settings = self.ai_settings
+        return bool(settings['status']) if 'status' in settings else None
+
+    @property
+    def local_firmware_version(self) -> str | None:
+        return getattr(self, '_local_firmware_version', None)
+
+    @property
+    def chamber_temperature(self) -> float | None:
+        """Chamber temperature, where the printer has a sensor for it.
+
+        An open-frame or unsensored machine reports zero here, which is why
+        this is not turned into an entity without checking it first.
+        """
+        return getattr(self, '_chamber_temp', None)
+
+    @property
+    def target_chamber_temperature(self) -> float | None:
+        return getattr(self, '_target_chamber_temp', None)
+
     def process_mqtt_update(
         self,
         topic: str,
@@ -1241,6 +1395,12 @@ class AnycubicPrinter:
 
         elif msg_type == 'light':
             self._process_mqtt_update_light(action, state, payload)
+
+        elif msg_type == 'info':
+            self._process_mqtt_update_info(action, state, payload)
+
+        elif msg_type == 'aiSettings':
+            self._process_mqtt_update_ai_settings(action, state, payload)
 
         else:
             raise AnycubicMQTTUnknownUpdate(ErrorsMQTTUpdate.unknown.format(msg_type))
