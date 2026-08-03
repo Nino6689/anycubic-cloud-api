@@ -18,6 +18,17 @@ suite. Those additions and modifications are by [@Nino6689](https://github.com/N
 
 It remains **GPL-3.0-or-later**, as it must.
 
+### Anycubic's certificates
+
+This package ships Anycubic's own TLS certificates and client key, because their MQTT broker
+requires mutual TLS using that identity and there is no other way for a third-party client to reach
+it. **They are Anycubic's property, not covered by this licence, and no ownership is claimed** — see
+[COPYRIGHT](COPYRIGHT). They are a shared identity taken from Anycubic's own slicer rather than a
+per-user credential, and they came from the upstream project this is derived from.
+
+The **LAN Mode** client needs none of this. If you only talk to the printer locally, no Anycubic
+credential is involved at any point.
+
 ## Install
 
 ```bash

@@ -26,3 +26,29 @@ General Public License for more details.
 
 You should have received a copy of the GNU General Public License along
 with this program. If not, see <https://www.gnu.org/licenses/>.
+
+
+THIRD-PARTY MATERIAL — NOT COVERED BY THIS LICENCE
+--------------------------------------------------
+
+src/anycubic_cloud_api/resources/
+    anycubic_mqqt_tls_ca.crt
+    anycubic_mqqt_tls_client.crt
+    anycubic_mqqt_tls_client.key
+
+These are Anycubic's own X.509 certificates and the matching client key,
+issued by "AC Root CA, O=Anycubic" to "CN=AnycubicSlicer". They are the
+property of Shenzhen Anycubic Technology Co., Ltd.
+
+They are NOT the work of the authors above, are NOT licensed under the GNU
+General Public License, and no claim of ownership over them is made here.
+They are included solely because Anycubic's MQTT broker requires mutual TLS
+using this identity, and there is no other way for a third-party client to
+connect to a service the user already has an account with.
+
+They are a shared identity distributed inside Anycubic's own desktop slicer,
+not a per-user credential, and were present in the upstream project this is
+derived from.
+
+If Anycubic would prefer these were not redistributed, contact the maintainer
+and they will be removed.
