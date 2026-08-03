@@ -9,7 +9,11 @@ description = "Async client for the Anycubic Cloud API and its MQTT stream"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "GPL-3.0-or-later" }
+# Most of this library originated in WaresWichall's Home Assistant
+# integration; it is extracted, modified and extended here. See the
+# attribution section of the README.
 authors = [
+    { name = "WaresWichall" },
     { name = "Nino Bondonno" },
 ]
 maintainers = [

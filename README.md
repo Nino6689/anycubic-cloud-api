@@ -2,8 +2,21 @@
 
 Async Python client for the **Anycubic Cloud** API and its MQTT telemetry stream.
 
-Extracted from the [Home Assistant Anycubic Cloud integration](https://github.com/Nino6689/hass-anycubic_cloud)
+Extracted from the [Home Assistant Anycubic integration](https://github.com/Nino6689/hass-anycubic)
 so it can be versioned, tested and used independently.
+
+## Attribution
+
+**The bulk of this library is the work of [@WaresWichall](https://github.com/WaresWichall), from
+[hass-anycubic_cloud](https://github.com/WaresWichall/hass-anycubic_cloud)** — the Anycubic cloud
+API client, the MQTT layer and the printer data models all originated there, under GPL-3.0.
+
+This package extracts that code so it can be versioned and tested on its own, and adds to it:
+the LAN Mode client, the filament-usage maths, tolerant parsing of partial reports, and the test
+suite. Those additions and modifications are by [@Nino6689](https://github.com/Nino6689), from
+2026 onwards.
+
+It remains **GPL-3.0-or-later**, as it must.
 
 ## Install
 
