@@ -335,3 +335,83 @@ class TestTemperaturesWithoutTheCloud:
         apply(printer, report)
 
         assert printer.parameter is None
+
+
+class TestWhatTheCloudWouldHaveSaid:
+    """Two facts only the cloud states, which entity filtering depends on.
+
+    Without them every filament entity is filtered out as belonging to a
+    different kind of machine, and every ACE entity as unsupported -- so a
+    printer reached locally ends up with almost no entities at all.
+    """
+
+    def test_an_fdm_device_type_means_filament(self):
+        printer = make_printer()
+
+        printer.set_material_type_from_device_type("fdm")
+
+        assert str(printer.material_type) == "Filament"
+
+    @pytest.mark.parametrize("device_type", ["lcd", "dlp", "resin", "LCD"])
+    def test_a_resin_device_type_means_resin(self, device_type):
+        printer = make_printer()
+
+        printer.set_material_type_from_device_type(device_type)
+
+        assert str(printer.material_type) == "Resin"
+
+    @pytest.mark.parametrize("device_type", [None, "", "something-new"])
+    def test_an_unknown_device_type_leaves_it_unset(self, device_type):
+        """Better unset than wrong -- a wrong guess hides the right entities."""
+        printer = make_printer()
+
+        printer.set_material_type_from_device_type(device_type)
+
+        assert printer.material_type is None
+
+    def test_the_cloud_wins_when_it_has_already_spoken(self):
+        printer = AnycubicPrinter(
+            api_parent=MagicMock(),
+            machine_type=20025,
+            machine_name="x",
+            id=1,
+            material_type="resin",
+            ignore_init_errors=True,
+        )
+
+        printer.set_material_type_from_device_type("fdm")
+
+        assert str(printer.material_type) == "Resin"
+
+    def test_a_reported_box_means_the_printer_supports_one(self):
+        """The cloud's function list is absent on a local connection."""
+        printer = AnycubicPrinter(
+            api_parent=MagicMock(),
+            machine_type=20025,
+            machine_name="x",
+            id=1,
+            multi_color_box=[{"id": 0, "box_id": 0, "slots": []}],
+            ignore_init_errors=True,
+        )
+
+        assert printer.connected_ace_units == 1
+        assert printer.supports_function_multi_color_box is True
+
+    def test_no_box_means_no_support(self):
+        printer = make_printer()
+
+        assert printer.connected_ace_units == 0
+        assert printer.supports_function_multi_color_box is False
+
+    def test_the_cloud_function_list_still_counts_with_no_box_attached(self):
+        """A supported-but-detached ACE must not read as unsupported."""
+        printer = AnycubicPrinter(
+            api_parent=MagicMock(),
+            machine_type=20025,
+            machine_name="x",
+            id=1,
+            type_function_ids=[2006],
+            ignore_init_errors=True,
+        )
+
+        assert printer.supports_function_multi_color_box is True

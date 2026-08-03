@@ -274,6 +274,22 @@ class AnycubicPrinter:
         else:
             self._type_function_ids = list()
 
+    def set_material_type_from_device_type(self, device_type: str | None) -> None:
+        """Infer what the printer prints from what kind of machine it says it is.
+
+        The cloud states this outright. A printer reached over its own network
+        does not, but its discovery document names a device type -- and `fdm`
+        means filament as surely as the cloud saying so. Without it every
+        filament entity is filtered out as belonging to a different machine.
+        """
+        if self._material_type is not None or not device_type:
+            return
+
+        if str(device_type).lower() == "fdm":
+            self._set_material_type("filament")
+        elif str(device_type).lower() in ("lcd", "dlp", "resin"):
+            self._set_material_type("resin")
+
     def _set_material_type(self, material_type: str | None) -> None:
         self._material_type: AnycubicPrinterMaterialType | str | None = None
 
@@ -1707,7 +1723,13 @@ class AnycubicPrinter:
 
     @property
     def supports_function_multi_color_box(self) -> bool:
-        return AnycubicFunctionID.MULTI_COLOR_BOX in self._type_function_ids
+        if AnycubicFunctionID.MULTI_COLOR_BOX in self._type_function_ids:
+            return True
+
+        # The function list comes from the cloud, and a printer reached only
+        # over its own network has none. One that is reporting a box plainly
+        # supports one, whatever any list says.
+        return self.connected_ace_units > 0
 
     @property
     def supports_function_ai_detection(self) -> bool:
