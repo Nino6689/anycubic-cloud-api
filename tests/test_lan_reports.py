@@ -296,3 +296,42 @@ class TestAvailabilityFromLocalReports:
         apply(printer, report)
 
         assert printer.printer_online is True
+
+
+class TestTemperaturesWithoutTheCloud:
+    """The cloud builds the temperature holder; a local-only printer has none."""
+
+    def test_an_info_report_creates_it(self):
+        printer = make_printer()
+
+        apply(printer, INFO_REPORT)
+
+        assert printer.parameter is not None
+        assert printer.curr_nozzle_temp == 34
+        assert printer.curr_hotbed_temp == 31
+
+    def test_a_temperature_report_creates_it(self):
+        printer = make_printer()
+
+        apply(printer, TestQueryActionReplies.TEMPERATURE)
+
+        assert printer.curr_nozzle_temp == 34
+
+    def test_later_reports_update_it(self):
+        printer = make_printer()
+        apply(printer, INFO_REPORT)
+
+        hotter = {**INFO_REPORT, "data": {**INFO_REPORT["data"]}}
+        hotter["data"]["temp"] = {**hotter["data"]["temp"], "curr_nozzle_temp": 210}
+        apply(printer, hotter)
+
+        assert printer.curr_nozzle_temp == 210
+
+    def test_a_report_without_temperatures_leaves_it_alone(self):
+        printer = make_printer()
+        report = {**INFO_REPORT, "data": {**INFO_REPORT["data"]}}
+        del report["data"]["temp"]
+
+        apply(printer, report)
+
+        assert printer.parameter is None

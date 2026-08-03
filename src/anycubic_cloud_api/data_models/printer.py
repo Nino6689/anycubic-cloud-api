@@ -375,6 +375,26 @@ class AnycubicPrinter:
             if not self._ignore_init_errors:
                 raise e
 
+    def _apply_current_temps(self, hotbed: Any, nozzle: Any) -> None:
+        """Record the live temperatures, creating the holder if need be.
+
+        The cloud builds this object when the printer is first fetched. With
+        only a local connection there is no such fetch, so it has to be made
+        from the first report that carries temperatures -- otherwise every
+        temperature entity reads unavailable on a working printer.
+        """
+        if hotbed is None or nozzle is None:
+            return
+
+        if self._parameter is None:
+            self._set_parameter({
+                'curr_hotbed_temp': hotbed,
+                'curr_nozzle_temp': nozzle,
+            })
+            return
+
+        self._parameter.update_current_temps(hotbed, nozzle)
+
     def _set_parameter(
         self,
         parameter: dict[str, Any] | None,
@@ -893,8 +913,7 @@ class AnycubicPrinter:
             self._chamber_temp = data.get('curr_chamber_temp')
             self._target_chamber_temp = data.get('target_chamber_temp')
 
-            if self.parameter:
-                self.parameter.update_current_temps(curr_hotbed, curr_nozzle)
+            self._apply_current_temps(curr_hotbed, curr_nozzle)
 
             if self._latest_project:
                 self._latest_project.update_target_temps(target_hotbed, target_nozzle)
@@ -1021,12 +1040,8 @@ class AnycubicPrinter:
             # each is applied only if it is actually there.
             settings = data.get('settings') or {}
 
-            if (
-                self.parameter
-                and 'curr_hotbed_temp' in data
-                and 'curr_nozzle_temp' in data
-            ):
-                self.parameter.update_current_temps(
+            if 'curr_hotbed_temp' in data and 'curr_nozzle_temp' in data:
+                self._apply_current_temps(
                     data['curr_hotbed_temp'],
                     data['curr_nozzle_temp'],
                 )
@@ -1257,11 +1272,10 @@ class AnycubicPrinter:
         temp = data.get('temp')
 
         if temp:
-            if self.parameter:
-                self.parameter.update_current_temps(
-                    temp.get('curr_hotbed_temp'),
-                    temp.get('curr_nozzle_temp'),
-                )
+            self._apply_current_temps(
+                temp.get('curr_hotbed_temp'),
+                temp.get('curr_nozzle_temp'),
+            )
             # A Kobra S1 reports chamber temperatures of zero because it has no
             # chamber sensor, so they are kept raw rather than turned into an
             # always-zero entity.
