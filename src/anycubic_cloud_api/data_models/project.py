@@ -1018,10 +1018,12 @@ class AnycubicProject:
             return "preheating"
         elif self._print_status == AnycubicPrintStatus.Slicing:
             return "slicing"
+        elif self._print_status == AnycubicPrintStatus.Levelling:
+            return "levelling"
 
-        # Newer firmware reports codes this enum doesn't cover -- a Kobra S1
-        # sends 9 while levelling. The printer also sends a plain-text phase
-        # alongside it, which is far more useful than "unknown", so prefer it.
+        # Newer firmware still reports codes this enum doesn't cover. The
+        # printer sends a plain-text phase alongside the code, which is far
+        # more useful than "unknown", so prefer it over giving up.
         reported_state = self._get_print_setting('state')
 
         if reported_state:

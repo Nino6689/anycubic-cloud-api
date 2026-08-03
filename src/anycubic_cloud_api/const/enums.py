@@ -15,6 +15,8 @@ class AnycubicPrintStatus(IntEnum):
     Checking = 5
     Preheating = 6
     Slicing = 7
+    # 8 is unclaimed -- no printer has been observed reporting it.
+    Levelling = 9
 
 
 class AnycubicOrderID(IntEnum):

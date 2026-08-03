@@ -415,3 +415,67 @@ class TestWhatTheCloudWouldHaveSaid:
         )
 
         assert printer.supports_function_multi_color_box is True
+
+
+class TestLevellingStatus:
+    """Upstream issue #55: job state read 'unknown' while the printer levelled.
+
+    The status enum stopped at 7, so code 9 fell through as unrecognised.
+    """
+
+    def test_levelling_is_a_known_status(self):
+        from anycubic_cloud_api.const.enums import AnycubicPrintStatus
+
+        assert AnycubicPrintStatus(9).name == "Levelling"
+
+    def test_the_existing_statuses_are_unchanged(self):
+        """Their numbers are on the wire; renumbering would break history."""
+        from anycubic_cloud_api.const.enums import AnycubicPrintStatus
+
+        assert [(s.name, s.value) for s in AnycubicPrintStatus] == [
+            ("Printing", 1),
+            ("Complete", 2),
+            ("Cancelled", 3),
+            ("Downloading", 4),
+            ("Checking", 5),
+            ("Preheating", 6),
+            ("Slicing", 7),
+            ("Levelling", 9),
+        ]
+
+
+class TestLevellingReadsAsLevelling:
+    """The job state should say what the printer is doing, not "unknown"."""
+
+    def _status(self, code, reported=None):
+        from anycubic_cloud_api.data_models.project import AnycubicProject
+
+        class Stub(AnycubicProject):
+            """Only the two inputs print_status reads, so no full project."""
+
+            __slots__ = ("_reported",)
+
+            def __init__(self, code, reported):
+                self._print_status = code
+                self._reported = reported
+
+            @property
+            def print_is_paused(self):
+                return False
+
+            def _get_print_setting(self, key):
+                return self._reported if key == "state" else None
+
+        return Stub(code, reported).print_status
+
+    def test_levelling(self):
+        assert self._status(9) == "levelling"
+
+    def test_printing_is_unaffected(self):
+        assert self._status(1) == "printing"
+
+    def test_an_unmapped_code_prefers_the_printers_own_words(self):
+        assert self._status(99, reported="calibrating") == "calibrating"
+
+    def test_an_unmapped_code_with_no_text_is_unknown(self):
+        assert self._status(99) == "unknown"
