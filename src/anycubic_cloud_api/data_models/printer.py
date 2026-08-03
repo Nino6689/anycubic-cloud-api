@@ -1995,11 +1995,25 @@ class AnycubicPrinter:
 
     @property
     def primary_multi_color_box_loaded_slot(self) -> int | None:
-        if self.primary_multi_color_box:
-            slot = self.primary_multi_color_box.loaded_slot
-            # -1 means nothing is loaded; surface that as unknown rather than
-            # a slot number that doesn't exist.
-            return slot if slot is not None and slot >= 0 else None
+        box = self.primary_multi_color_box
+
+        if not box:
+            return None
+
+        slot = box.loaded_slot
+
+        # -1 means nothing is loaded; surface that as unknown rather than a
+        # slot number that doesn't exist.
+        if slot is not None and slot >= 0:
+            return slot
+
+        # Some printers leave the box-level field at -1 even mid-print, while
+        # still marking the feeding slot's own status as loaded. Observed on a
+        # Kobra S1 printing from slot 3. Without this the filament used by such
+        # a job cannot be charged to any spool.
+        for spool in box.slots or []:
+            if spool is not None and spool.spool_loaded:
+                return int(spool.slot_index)
 
         return None
 

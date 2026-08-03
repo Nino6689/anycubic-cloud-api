@@ -479,3 +479,65 @@ class TestLevellingReadsAsLevelling:
 
     def test_an_unmapped_code_with_no_text_is_unknown(self):
         assert self._status(99) == "unknown"
+
+
+class TestLoadedSlotFallback:
+    """Some printers leave the box-level loaded_slot at -1 while printing.
+
+    Observed live on a Kobra S1 feeding from slot 3: the box reported -1, but
+    the slot's own status was 5 (loaded). Filament used by such a job could not
+    be charged to any spool, because attribution falls back on this value when
+    the job carries no per-slot breakdown.
+    """
+
+    def _printer(self, loaded_slot, statuses):
+        from unittest.mock import MagicMock
+        from anycubic_cloud_api.data_models.printer import AnycubicPrinter
+
+        slots = [
+            {
+                "index": i,
+                "sku": "",
+                "type": "PLA",
+                "color": [1, 2, 3],
+                "status": st,
+                "edit_status": 1,
+            }
+            for i, st in enumerate(statuses)
+        ]
+        return AnycubicPrinter(
+            api_parent=MagicMock(),
+            machine_type=20025,
+            machine_name="Kobra S1",
+            id=1,
+            multi_color_box=[{"id": 0, "box_id": 0, "loaded_slot": loaded_slot, "slots": slots}],
+            ignore_init_errors=True,
+        )
+
+    def test_the_box_level_field_is_preferred_when_it_is_set(self):
+        printer = self._printer(1, [4, 5, 4, 4])
+
+        assert printer.primary_multi_color_box_loaded_slot == 1
+
+    def test_minus_one_falls_back_to_the_slot_marked_loaded(self):
+        """The live case: box says -1, slot 2 says status 5."""
+        printer = self._printer(-1, [4, 4, 5, 4])
+
+        assert printer.primary_multi_color_box_loaded_slot == 2
+
+    def test_nothing_loaded_still_reads_as_unknown(self):
+        printer = self._printer(-1, [4, 4, 4, 4])
+
+        assert printer.primary_multi_color_box_loaded_slot is None
+
+    def test_a_box_with_no_slots_is_harmless(self):
+        from unittest.mock import MagicMock
+        from anycubic_cloud_api.data_models.printer import AnycubicPrinter
+
+        printer = AnycubicPrinter(
+            api_parent=MagicMock(), machine_type=20025, machine_name="x", id=1,
+            multi_color_box=[{"id": 0, "box_id": 0, "loaded_slot": -1, "slots": []}],
+            ignore_init_errors=True,
+        )
+
+        assert printer.primary_multi_color_box_loaded_slot is None
