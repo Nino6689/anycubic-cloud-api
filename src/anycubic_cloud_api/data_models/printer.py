@@ -875,19 +875,29 @@ class AnycubicPrinter:
         state: str,
         payload: AnycubicConsumableData,
     ) -> None:
-        if action == 'auto' and state == 'done':
+        # 'auto' over the cloud, 'query' when asked for locally -- same body.
+        if action in ('auto', 'query') and state == 'done':
             data = payload['data']
 
+            # Read every field first: reading is what marks it consumed, and
+            # anything left behind raises at the end of dispatch -- so these
+            # must not sit inside the conditionals below.
+            curr_hotbed = data.get('curr_hotbed_temp')
+            curr_nozzle = data.get('curr_nozzle_temp')
+            target_hotbed = data.get('target_hotbed_temp')
+            target_nozzle = data.get('target_nozzle_temp')
+
+            # Asked for locally, an enclosed printer also answers with the
+            # chamber. A Kobra S1 sends zeroes because it has no sensor, so
+            # these are kept raw rather than turned into an always-zero entity.
+            self._chamber_temp = data.get('curr_chamber_temp')
+            self._target_chamber_temp = data.get('target_chamber_temp')
+
             if self.parameter:
-                self.parameter.update_current_temps(
-                    data['curr_hotbed_temp'],
-                    data['curr_nozzle_temp'],
-                )
+                self.parameter.update_current_temps(curr_hotbed, curr_nozzle)
+
             if self._latest_project:
-                self._latest_project.update_target_temps(
-                    data['target_hotbed_temp'],
-                    data['target_nozzle_temp'],
-                )
+                self._latest_project.update_target_temps(target_hotbed, target_nozzle)
 
             return
         else:
@@ -899,10 +909,13 @@ class AnycubicPrinter:
         state: str,
         payload: AnycubicConsumableData,
     ) -> None:
-        if action == 'auto' and state == 'done':
+        # The cloud pushes these unprompted as action 'auto'; asked for over
+        # the local connection the same body comes back as 'query'.
+        if action in ('auto', 'query') and state == 'done':
             data = payload['data']
 
-            self._fan_speed = int(data['fan_speed_pct'])
+            if 'fan_speed_pct' in data:
+                self._fan_speed = int(data['fan_speed_pct'])
 
             # The Kobra S1 also reports the auxiliary part fan and the ACE box
             # fan here. Both were previously discarded as unhandled data.

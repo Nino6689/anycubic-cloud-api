@@ -212,3 +212,52 @@ class TestAiSettings:
     def test_an_unseen_printer_reports_nothing(self):
         assert make_printer().ai_detection_enabled is None
         assert make_printer().ai_settings == {}
+
+
+class TestQueryActionReplies:
+    """The cloud pushes these unprompted; locally they answer a query.
+
+    The body is identical either way, so refusing 'query' meant fan and
+    temperature reports were discarded over the local connection.
+    """
+
+    FAN = {
+        "type": "fan",
+        "action": "query",
+        "state": "done",
+        "data": {"aux_fan_speed_pct": 0, "box_fan_level": 0, "fan_speed_pct": 55},
+    }
+    TEMPERATURE = {
+        "type": "tempature",
+        "action": "query",
+        "state": "done",
+        "data": {
+            "curr_hotbed_temp": 31,
+            "curr_nozzle_temp": 34,
+            "curr_chamber_temp": 0,
+            "target_hotbed_temp": 0,
+            "target_nozzle_temp": 0,
+            "target_chamber_temp": 0,
+        },
+    }
+
+    def test_a_queried_fan_report_is_applied(self):
+        printer = make_printer()
+
+        apply(printer, self.FAN)
+
+        assert printer._fan_speed == 55
+
+    def test_a_pushed_fan_report_still_works(self):
+        printer = make_printer()
+
+        apply(printer, {**self.FAN, "action": "auto"})
+
+        assert printer._fan_speed == 55
+
+    def test_a_fan_report_without_the_main_speed_does_not_raise(self):
+        """Not every model reports all three."""
+        apply(make_printer(), {**self.FAN, "data": {"box_fan_level": 2}})
+
+    def test_a_queried_temperature_report_is_applied(self):
+        apply(make_printer(), self.TEMPERATURE)
