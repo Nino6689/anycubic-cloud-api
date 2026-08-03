@@ -63,6 +63,10 @@ LAN_QUERY_ACTIONS = {
     "multiColorBox": "getInfo",
     "print": "query",
     "aiSettings": "query",
+    # Head position and the external filament holder. Printers without one
+    # simply stay silent rather than erroring, so asking costs nothing.
+    "axis": "query",
+    "extfilbox": "query",
 }
 
 LAN_QUERY_TYPES = tuple(LAN_QUERY_ACTIONS)

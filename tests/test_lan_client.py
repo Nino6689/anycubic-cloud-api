@@ -159,6 +159,14 @@ class TestPublishing:
 
         assert asked == list(LAN_QUERY_TYPES)
 
+    def test_head_position_is_asked_for(self):
+        """Confirmed answering on a Kobra S1; without it the entities are dead."""
+        assert LAN_QUERY_ACTIONS["axis"] == "query"
+
+    def test_asking_for_something_the_printer_lacks_is_harmless(self):
+        """A printer with no external holder stays silent rather than erroring."""
+        assert "extfilbox" in LAN_QUERY_ACTIONS
+
     def test_the_firmware_misspelling_is_preserved(self):
         """The printer answers "tempature"; correcting it gets no reply."""
         assert "tempature" in LAN_QUERY_TYPES
