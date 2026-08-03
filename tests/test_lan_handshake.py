@@ -142,7 +142,8 @@ class TestMacExtraction:
         ("usn", "expected"),
         [
             ("uuid:fdm:A4-E8-8D-80-54-C8", "A4-E8-8D-80-54-C8"),
-            ("uuid:fdm:a4:e8:8d:80:54:c8", "a4:e8:8d:80:54:c8"),
+            # Normalised to the form the cloud reports -- see TestMacNormalisation.
+            ("uuid:fdm:a4:e8:8d:80:54:c8", "A4-E8-8D-80-54-C8"),
             ("no mac here", None),
             (None, None),
             ("", None),
@@ -277,3 +278,24 @@ class TestNetworkFailures:
 
         with pytest.raises(AnycubicLANError, match="10.0.66.99"):
             await handshake.async_fetch_info()
+
+
+class TestMacNormalisation:
+    """Entity unique ids are built from this, so the format must be stable.
+
+    The cloud reports upper case with hyphens for the same printer. If the two
+    sources disagreed, switching between cloud and local would recreate every
+    entity as a duplicate rather than reusing it.
+    """
+
+    @pytest.mark.parametrize(
+        "usn",
+        [
+            "uuid:fdm:A4-E8-8D-80-54-C8",
+            "uuid:fdm:a4-e8-8d-80-54-c8",
+            "uuid:fdm:A4:E8:8D:80:54:C8",
+            "uuid:fdm:a4:e8:8d:80:54:c8",
+        ],
+    )
+    def test_every_form_normalises_to_the_cloud_format(self, usn):
+        assert _extract_mac(usn) == "A4-E8-8D-80-54-C8"

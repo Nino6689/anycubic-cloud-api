@@ -139,13 +139,23 @@ def _decrypt_broker_info(payload: str, token: str, local_token: str) -> dict[str
 
 
 def _extract_mac(usn: Any) -> str | None:
-    """Pull the MAC out of the discovery document's URN, if it has one."""
+    """Pull the MAC out of the discovery document's URN, if it has one.
+
+    Normalised to upper case with hyphens, which is the form the cloud reports
+    for the same printer. Home Assistant builds entity unique ids from this, so
+    the two sources agreeing is what lets a printer switch between the cloud
+    and the local connection without every entity being recreated as a
+    duplicate.
+    """
     if not usn:
         return None
 
     match = _MAC_PATTERN.search(str(usn))
 
-    return match.group(0) if match else None
+    if match is None:
+        return None
+
+    return match.group(0).replace(":", "-").upper()
 
 
 class AnycubicLANHandshake:
