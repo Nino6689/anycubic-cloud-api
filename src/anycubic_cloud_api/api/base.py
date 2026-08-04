@@ -356,7 +356,17 @@ class AnycubicAPIBase:
             try:
                 await self._get_user_token_with_access_token_with_retry()
             except AnycubicAuthError:
-                return False
+                # A web token is a JWT too, so one can be mistaken for a slicer
+                # token and sent to a login endpoint that will never accept it.
+                # Try it as a plain user token before declaring the credentials
+                # bad -- they may be perfectly good.
+                if self.anycubic_auth.retry_access_token_as_user_token():
+                    self._log_to_debug(
+                        "Access token login failed; retrying it as a web token."
+                    )
+                    self._tokens_changed = True
+                else:
+                    return False
         try:
             await self.get_user_info()
             return True

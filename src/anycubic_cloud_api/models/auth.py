@@ -133,6 +133,27 @@ class AnycubicAuthentication:
             or self._auth_mode == AnycubicAuthMode.ANDROID
         )
 
+    def retry_access_token_as_user_token(self) -> bool:
+        """Treat a rejected slicer token as a web token instead.
+
+        Slicer and web tokens are both JWTs and cannot be told apart by
+        looking at them, so a web token can be taken for a slicer one. That
+        sends it to a login endpoint which answers "User does not exist", and
+        setup fails for a token that was perfectly good.
+
+        Rather than guess harder, the failure is used as the signal: move the
+        token back to being a plain user token and carry on as web. Returns
+        False if there is nothing left to try.
+        """
+        if self._auth_access_token is None or self._auth_token is not None:
+            return False
+
+        self._auth_token = self._auth_access_token
+        self._auth_access_token = None
+        self._auth_mode = AnycubicAuthMode.WEB
+
+        return True
+
     def set_auth_token(
         self,
         auth_token: str,
