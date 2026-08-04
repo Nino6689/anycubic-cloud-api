@@ -493,6 +493,10 @@ class AnycubicDryingStatus:
         )
 
 
+# `edit_status` on a slot: 0 read from a tag, 1 entered by hand, 2 empty.
+SPOOL_EDIT_STATUS_EMPTY = 2
+
+
 class AnycubicSpoolInfo:
     __slots__ = (
         "_index",
@@ -598,6 +602,22 @@ class AnycubicSpoolInfo:
     @property
     def edit_status(self) -> int:
         return self._edit_status
+
+    @property
+    def spool_present(self) -> bool:
+        """Whether there is actually a reel in this slot.
+
+        The ACE keeps reporting the last material, colour and SKU it saw in a
+        slot after the reel is taken out, so those fields say nothing about
+        whether anything is loaded. `edit_status` does: 0 means the details
+        were read from a tag, 1 that they were typed in, and 2 that the slot
+        is empty.
+
+        Confirmed on a Kobra S1 with one reel in slot 3 -- that slot alone
+        reported 0, and the three empty ones all reported 2 while still
+        showing the material they last held.
+        """
+        return self._edit_status != SPOOL_EDIT_STATUS_EMPTY
 
     @property
     def icon_type(self) -> int | None:
