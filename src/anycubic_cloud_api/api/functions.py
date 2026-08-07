@@ -27,10 +27,11 @@ from ..data_models.orders import (
     AnycubicBaseOrderRequest,
     AnycubicBaseProjectOrderRequest,
     AnycubicBaseStartPrintRequest,
-    AnycubicCameraToken,
+    AnycubicCameraOpenOrderRequest,
     AnycubicProjectCtrlOrderRequest,
     AnycubicPrinterOrderRequest,
     AnycubicProjectOrderRequest,
+    AnycubicShengwangCredentials,
     AnycubicStartPrintRequestCloud,
     AnycubicStartPrintRequestLocal,
 )
@@ -1004,18 +1005,31 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
     # WIP Unused ORDER Functions
     # ------------------------------------------
 
-    async def _send_anycubic_camera_open_order(
+    async def send_anycubic_camera_open_order(
         self,
         printer: AnycubicPrinter,
         raw_data: bool = False,
-    ) -> AnycubicCameraToken | None | dict[str, Any]:
+    ) -> AnycubicShengwangCredentials | None | dict[str, Any]:
+        """Open the cloud camera and return per-session Agora credentials.
+
+        The credentials are short lived and ``client_uid`` is issued fresh on
+        every call, so request them per viewing session rather than caching.
+
+        ⚠ Anycubic hands the camera to the account's most recent session. Log
+        in anywhere else -- the slicer, the phone app, a second client -- and
+        this call keeps answering "Operation successful" with the credentials
+        block simply missing, while every other API call carries on working.
+        So a missing block is retried once behind a fresh login before it is
+        believed; verified by A/B against real hardware.
+        """
         if not printer:
             return None
 
-        order_request = AnycubicBaseOrderRequest(
-            order_id=int(AnycubicOrderID.CAMERA_OPEN),
+        order_request = AnycubicCameraOpenOrderRequest(
+            order_id=AnycubicOrderID.CAMERA_OPEN,
             printer_id=printer.id,
         )
+
         resp = await self._fetch_api_resp(
             endpoint=API_ENDPOINT.send_order,
             params=order_request.order_request_data
@@ -1023,16 +1037,46 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
         if raw_data:
             return resp
 
-        data = resp['data']
-
-        token = AnycubicCameraToken(
-            secret_id=data['token']['tmpSecretId'],
-            secret_key=data['token']['tmpSecretKey'],
-            session_token=data['token']['sessionToken'],
-            region=data['token']['region'],
-            msg_id=data['msgid'],
+        credentials = AnycubicShengwangCredentials.from_order_response(
+            resp.get('data') or {}
         )
-        return token
+
+        if credentials is not None:
+            return credentials
+
+        # Nothing is wrong with the token itself, so check_api_tokens() is
+        # happy and will not refresh it. Drop the cached user token to force a
+        # real login, which makes this the most recent session again.
+        self._log_to_debug(
+            f"Camera open for printer {printer.id} returned no credentials "
+            f"(msg={resp.get('msg')}), retrying behind a fresh login."
+        )
+
+        if not self.anycubic_auth.clear_cached_access_user_token():
+            return None
+
+        self._tokens_changed = True
+
+        if not await self._check_can_access_api():
+            return None
+
+        resp = await self._fetch_api_resp(
+            endpoint=API_ENDPOINT.send_order,
+            params=order_request.order_request_data
+        )
+
+        credentials = AnycubicShengwangCredentials.from_order_response(
+            resp.get('data') or {}
+        )
+
+        if credentials is None:
+            # Genuinely nothing to stream: no camera on this printer.
+            self._log_to_debug(
+                f"Camera open for printer {printer.id} still returned no "
+                f"credentials after re-login, msg={resp.get('msg')}"
+            )
+
+        return credentials
 
     async def _send_order_multi_color_box_get_info(
         self,

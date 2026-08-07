@@ -409,3 +409,173 @@ class AnycubicCameraToken:
             f"region={self.region}, "
             f"msg_id={self.msg_id})"
         )
+
+
+class AnycubicCameraOpenOrderRequest(AnycubicBaseOrderRequest):
+    """CAMERA_OPEN, shaped exactly as the slicer sends it.
+
+    Two details are load bearing and neither produces an error when wrong --
+    the server answers "Operation successful" either way:
+
+    * ``order_id`` must be a STRING.
+    * ``shengwang_rtc_support`` is a TOP LEVEL field, not part of ``data``,
+      and without it the server replies "Video service upgraded. Update the
+      slicer to enable." instead of returning credentials.
+
+    There is no ``data`` key at all for this order.
+    """
+
+    @property
+    def order_request_data(self) -> dict[str, Any]:
+        return {
+            **super().order_request_data,
+            'order_id': str(self._order_id),
+            'shengwang_rtc_support': True,
+        }
+
+    def __repr__(self) -> str:
+        return (
+            f"AnycubicCameraOpenOrderRequest("
+            f"order_id={self._order_id}, "
+            f"printer_id={self._printer_id})"
+        )
+
+
+class AnycubicShengwangCredentials:
+    """Per-session Agora ("shengwang", 声网) join credentials.
+
+    Short lived -- the slicer re-requests rather than renewing, and caches for
+    only 30 seconds. ``client_uid`` is issued fresh on every call, so these
+    must never be reused across sessions.
+    """
+
+    __slots__ = (
+        "_appid",
+        "_channel",
+        "_rtc_token",
+        "_client_uid",
+        "_device_uid",
+        "_encryption_key",
+        "_encryption_kdf_salt",
+        "_encryption_mode",
+        "_event_id",
+        "_msg_id",
+    )
+
+    def __init__(
+        self,
+        appid: str,
+        channel: str,
+        rtc_token: str,
+        client_uid: int,
+        device_uid: int | None = None,
+        encryption_key: str | None = None,
+        encryption_kdf_salt: str | None = None,
+        encryption_mode: str | None = None,
+        event_id: str | None = None,
+        msg_id: str | None = None,
+    ) -> None:
+        self._appid = appid
+        self._channel = channel
+        self._rtc_token = rtc_token
+        self._client_uid = int(client_uid)
+        self._device_uid = int(device_uid) if device_uid is not None else None
+        self._encryption_key = encryption_key
+        self._encryption_kdf_salt = encryption_kdf_salt
+        self._encryption_mode = encryption_mode
+        self._event_id = event_id
+        self._msg_id = msg_id
+
+    @classmethod
+    def from_order_response(
+        cls,
+        data: dict[str, Any],
+    ) -> AnycubicShengwangCredentials | None:
+        block = data.get('shengwang')
+        if not block:
+            return None
+
+        # Present in the slicer's build, absent from the responses this
+        # account receives; the subscriber does not need it, it is only used
+        # to filter user-left events.
+        device = data.get('shengwang_device') or {}
+
+        return cls(
+            appid=block['appid'],
+            channel=block['channel'],
+            rtc_token=block['rtc_token'],
+            client_uid=block['client_uid'],
+            device_uid=device.get('uid', block.get('uid')),
+            encryption_key=block.get('encryption_key'),
+            encryption_kdf_salt=block.get('encryption_kdf_salt'),
+            encryption_mode=block.get('encryption_mode'),
+            event_id=block.get('event_id'),
+            msg_id=data.get('msgid'),
+        )
+
+    @property
+    def appid(self) -> str:
+        return self._appid
+
+    @property
+    def channel(self) -> str:
+        return self._channel
+
+    @property
+    def rtc_token(self) -> str:
+        return self._rtc_token
+
+    @property
+    def client_uid(self) -> int:
+        return self._client_uid
+
+    @property
+    def device_uid(self) -> int | None:
+        return self._device_uid
+
+    @property
+    def encryption_key(self) -> str | None:
+        return self._encryption_key
+
+    @property
+    def encryption_kdf_salt(self) -> str | None:
+        return self._encryption_kdf_salt
+
+    @property
+    def encryption_mode(self) -> str | None:
+        """Agora's enum spelling, eg. ``AES_256_GCM2``."""
+        return self._encryption_mode
+
+    @property
+    def web_encryption_mode(self) -> str | None:
+        """The spelling the wire protocol wants, eg. ``aes-256-gcm2``."""
+        if not self._encryption_mode:
+            return None
+        return self._encryption_mode.lower().replace('_', '-')
+
+    @property
+    def is_encrypted(self) -> bool:
+        return bool(
+            self._encryption_mode
+            and self._encryption_mode.lower() != 'none'
+            and self._encryption_key
+        )
+
+    @property
+    def event_id(self) -> str | None:
+        return self._event_id
+
+    @property
+    def msg_id(self) -> str | None:
+        return self._msg_id
+
+    def __repr__(self) -> str:
+        # Never render the token, key or salt.
+        return (
+            f"AnycubicShengwangCredentials("
+            f"appid={self._appid}, "
+            f"channel={self._channel}, "
+            f"client_uid={self._client_uid}, "
+            f"device_uid={self._device_uid}, "
+            f"encryption_mode={self._encryption_mode})"
+        )
