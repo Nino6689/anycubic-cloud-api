@@ -1374,8 +1374,21 @@ class AnycubicPrinter:
 
     @property
     def axis_is_moving(self) -> bool:
-        """Whether the printer is mid-move or mid-home."""
-        return self.axis_move_state not in (None, 'done')
+        """Whether the printer is mid-move or mid-home.
+
+        A refused move reports 'failed', which is finished, not moving.
+        """
+        return self.axis_move_state not in (None, 'done', 'failed')
+
+    @property
+    def axis_move_failed(self) -> bool:
+        """Whether the last move was refused.
+
+        The usual cause is an axis that has not been homed: Z in particular
+        is not covered by the home-all, and every Z move is refused until it
+        has been homed on its own.
+        """
+        return self.axis_move_state == 'failed'
 
     @property
     def camera_stream_url(self) -> str | None:
@@ -3019,7 +3032,13 @@ class AnycubicPrinter:
         )
 
     async def home_axis(self, axis: int = 4) -> str | None:
-        """Home an axis, or all of them. Required before any jog works."""
+        """Home an axis. Required before that axis will accept a jog.
+
+        ⚠ axis=4 does NOT include Z. Verified on a Kobra S1: after a home-all
+        every Z move came back 'failed' and the position did not change, and
+        only a home with axis=3 made Z movable. The printer's own panel has a
+        separate Z home button for exactly this reason.
+        """
         return await self.move_axis(axis=axis, move_type=2, distance=0)
 
     async def change_print_setting_speed_mode(
