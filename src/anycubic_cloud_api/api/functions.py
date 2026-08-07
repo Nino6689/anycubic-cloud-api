@@ -593,6 +593,22 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
             ),
         )
 
+    async def _send_order_disengage_motors(
+        self,
+        printer: AnycubicPrinter,
+    ) -> str | None:
+        """Turn the steppers off so the printer can be moved by hand."""
+        if not printer:
+            return None
+
+        return await self._send_anycubic_order(
+            order_request=AnycubicPrinterOrderRequest(
+                order_id=AnycubicOrderID.MOVE_AXLE_TURN_OFF,
+                printer_id=printer.id,
+                order_data=None,
+            ),
+        )
+
     async def _send_order_move_axis(
         self,
         printer: AnycubicPrinter,

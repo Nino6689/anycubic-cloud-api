@@ -3031,6 +3031,14 @@ class AnycubicPrinter:
             distance=distance,
         )
 
+    async def disengage_motors(self) -> str | None:
+        """Release the steppers so the gantry can be pushed by hand.
+
+        The printer forgets where it is afterwards, so an axis has to be
+        homed again before it will accept a move.
+        """
+        return await self._api_parent._send_order_disengage_motors(printer=self)
+
     async def home_axis(self, axis: int = 4) -> str | None:
         """Home an axis. Required before that axis will accept a jog.
 
