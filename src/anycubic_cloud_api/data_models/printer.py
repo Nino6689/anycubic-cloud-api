@@ -122,6 +122,7 @@ class AnycubicPrinter:
         "_tools",
         "_multi_color_box_fw_version",
         "_external_shelves",
+        "_axis_move_state",
         "_axis_position",
         "_multi_color_box",
         "_latest_project",
@@ -903,6 +904,17 @@ class AnycubicPrinter:
 
             return
 
+        if action == 'move':
+            # Sent for a jog and for a home alike -- the printer does not
+            # distinguish them. `state` goes to 'done' when the motion has
+            # finished, which is the only completion signal there is: no
+            # position comes with it, so anything wanting coordinates has to
+            # ask for them afterwards with QUERY_AXIS_POSITION.
+            self._axis_move_state = str(state)
+            payload['data']
+
+            return
+
         raise AnycubicMQTTUnknownUpdate(ErrorsMQTTUpdate.axis)
 
     def _process_mqtt_update_temperature(
@@ -1347,6 +1359,16 @@ class AnycubicPrinter:
 
         _drain(data)
 
+
+    @property
+    def axis_move_state(self) -> str | None:
+        """How the last axis move is getting on: 'doing', 'done', or None."""
+        return getattr(self, '_axis_move_state', None)
+
+    @property
+    def axis_is_moving(self) -> bool:
+        """Whether the printer is mid-move or mid-home."""
+        return self.axis_move_state not in (None, 'done')
 
     @property
     def camera_stream_url(self) -> str | None:

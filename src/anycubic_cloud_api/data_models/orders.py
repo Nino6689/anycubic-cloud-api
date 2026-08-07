@@ -41,6 +41,48 @@ class AnycubicBaseOrderRequest:
         )
 
 
+class AnycubicPrinterOrderRequest(AnycubicBaseOrderRequest):
+    """An order aimed at the printer itself, carrying no project.
+
+    ⚠ Not the same as sending project_id=0. The slicer omits the field
+    entirely for printer-level orders, and at least MOVE_AXLE quietly does
+    nothing when it is present -- the server still answers "Operation
+    successful", so the only symptom is a printer that does not move.
+    """
+
+    __slots__ = (
+        "_order_data",
+    )
+
+    def __init__(
+        self,
+        order_data: dict[str, Any] = {},
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self._order_data = order_data
+
+    @property
+    def order_request_data(self) -> dict[str, Any]:
+        return {
+            **super().order_request_data,
+            # ⚠ A STRING, as the slicer sends it. With an integer the server
+            # still answers "Operation successful" and the printer does
+            # nothing at all -- MOVE_AXLE was silently ignored until this was
+            # matched exactly.
+            'order_id': str(self._order_id),
+            'data': self._order_data,
+        }
+
+    def __repr__(self) -> str:
+        return (
+            f"AnycubicPrinterOrderRequest("
+            f"order_id={self._order_id}, "
+            f"printer_id={self._printer_id}, "
+            f"order_data={self._order_data})"
+        )
+
+
 class AnycubicBaseProjectOrderRequest(AnycubicBaseOrderRequest):
     __slots__ = (
         "_project_id",

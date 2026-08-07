@@ -27,6 +27,7 @@ from ..data_models.orders import (
     AnycubicBaseStartPrintRequest,
     AnycubicCameraToken,
     AnycubicProjectCtrlOrderRequest,
+    AnycubicPrinterOrderRequest,
     AnycubicProjectOrderRequest,
     AnycubicStartPrintRequestCloud,
     AnycubicStartPrintRequestLocal,
@@ -547,10 +548,9 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
             heat_type = 2
 
         return await self._send_anycubic_order(
-            order_request=AnycubicProjectOrderRequest(
+            order_request=AnycubicPrinterOrderRequest(
                 order_id=AnycubicOrderID.SET_TEMPERATURE,
                 printer_id=printer.id,
-                project_id=0,
                 order_data={
                     'type': heat_type,
                     'target_hotbed_temp': int(target_hotbed_temp or 0),
@@ -586,10 +586,9 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
             return None
 
         return await self._send_anycubic_order(
-            order_request=AnycubicProjectOrderRequest(
+            order_request=AnycubicPrinterOrderRequest(
                 order_id=AnycubicOrderID.SET_FAN_SPEED,
                 printer_id=printer.id,
-                project_id=0,
                 order_data=data,
             ),
         )
@@ -616,10 +615,9 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
             return None
 
         return await self._send_anycubic_order(
-            order_request=AnycubicProjectOrderRequest(
+            order_request=AnycubicPrinterOrderRequest(
                 order_id=AnycubicOrderID.MOVE_AXLE,
                 printer_id=printer.id,
-                project_id=0,
                 order_data={
                     'axis': int(axis),
                     'move_type': int(move_type),
