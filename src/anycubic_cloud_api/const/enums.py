@@ -57,6 +57,13 @@ class AnycubicOrderID(IntEnum):
     MOVE_AXLE_TURN_OFF = 1213  # Not handled
     QUERY_AXIS_POSITION = 1214  # Replies over MQTT with axis/query
     FILAMENT_CONTROL = 1215  # Not handled
+    # Set temperatures directly, with no print job. This is NOT
+    # PRINT_SETTINGS -- that one is refused unless a job is running, which
+    # is why preheating an idle printer looked impossible until the
+    # slicer's own traffic showed this order.
+    SET_TEMPERATURE = 1216
+    # Fan speeds directly, again without needing a running job.
+    SET_FAN_SPEED = 1221
     FEED_RESIN = 1224  # Not handled
     M7_AUTO_OPERATION = 1225  # Not handled
     CYCLIC_CLEANING = 1226  # Not handled

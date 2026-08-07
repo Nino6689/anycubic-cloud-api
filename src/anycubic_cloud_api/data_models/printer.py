@@ -2945,6 +2945,54 @@ class AnycubicPrinter:
             slot_index_list=slot_index_list,
         )
 
+    async def set_target_temperature(
+        self,
+        target_nozzle_temp: int | None = None,
+        target_hotbed_temp: int | None = None,
+    ) -> str | None:
+        """Heat the nozzle and/or bed, print job or not.
+
+        Unlike change_print_setting_target_* this works on an idle printer --
+        it is the order the slicer's One-Click Preheat uses.
+        """
+        return await self._api_parent._send_order_set_temperature(
+            printer=self,
+            target_nozzle_temp=target_nozzle_temp,
+            target_hotbed_temp=target_hotbed_temp,
+        )
+
+    async def set_fan_speed(
+        self,
+        fan_speed_pct: int | None = None,
+        aux_fan_speed_pct: int | None = None,
+        box_fan_level: int | None = None,
+    ) -> str | None:
+        """Set one fan, print job or not."""
+        return await self._api_parent._send_order_set_fan_speed(
+            printer=self,
+            fan_speed_pct=fan_speed_pct,
+            aux_fan_speed_pct=aux_fan_speed_pct,
+            box_fan_level=box_fan_level,
+        )
+
+    async def move_axis(
+        self,
+        axis: int,
+        move_type: int,
+        distance: int = 0,
+    ) -> str | None:
+        """Jog or home an axis. See _send_order_move_axis for the codes."""
+        return await self._api_parent._send_order_move_axis(
+            printer=self,
+            axis=axis,
+            move_type=move_type,
+            distance=distance,
+        )
+
+    async def home_axis(self, axis: int = 4) -> str | None:
+        """Home an axis, or all of them. Required before any jog works."""
+        return await self.move_axis(axis=axis, move_type=2, distance=0)
+
     async def change_print_setting_speed_mode(
         self,
         new_speed: int

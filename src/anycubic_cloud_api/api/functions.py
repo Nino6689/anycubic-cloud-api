@@ -513,6 +513,121 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
             ),
         )
 
+    async def _send_order_set_temperature(
+        self,
+        printer: AnycubicPrinter,
+        target_nozzle_temp: int | None = None,
+        target_hotbed_temp: int | None = None,
+    ) -> str | None:
+        """Set nozzle and/or bed temperature, with or without a print job.
+
+        Distinct from PRINT_SETTINGS, which the server refuses with "Print
+        task does not exist" unless a job is running. This is what the
+        slicer's One-Click Preheat uses, captured from its own traffic:
+
+            {"type": 0, "target_hotbed_temp": 0,  "target_nozzle_temp": 230}
+            {"type": 1, "target_hotbed_temp": 90, "target_nozzle_temp": 0}
+            {"type": 2, "target_hotbed_temp": 60, "target_nozzle_temp": 200}
+
+        `type` says which of the two the printer should act on -- 0 nozzle,
+        1 bed, 2 both -- and the unused figure is sent as 0 rather than
+        omitted.
+        """
+        if not printer:
+            return None
+
+        if target_nozzle_temp is None and target_hotbed_temp is None:
+            return None
+
+        if target_hotbed_temp is None:
+            heat_type = 0
+        elif target_nozzle_temp is None:
+            heat_type = 1
+        else:
+            heat_type = 2
+
+        return await self._send_anycubic_order(
+            order_request=AnycubicProjectOrderRequest(
+                order_id=AnycubicOrderID.SET_TEMPERATURE,
+                printer_id=printer.id,
+                project_id=0,
+                order_data={
+                    'type': heat_type,
+                    'target_hotbed_temp': int(target_hotbed_temp or 0),
+                    'target_nozzle_temp': int(target_nozzle_temp or 0),
+                },
+            ),
+        )
+
+    async def _send_order_set_fan_speed(
+        self,
+        printer: AnycubicPrinter,
+        fan_speed_pct: int | None = None,
+        aux_fan_speed_pct: int | None = None,
+        box_fan_level: int | None = None,
+    ) -> str | None:
+        """Set one fan, without needing a print job.
+
+        The slicer sends exactly one key per call -- {"fan_speed_pct": 40} --
+        rather than a combined object, so this mirrors that.
+        """
+        if not printer:
+            return None
+
+        data: dict[str, Any] = {}
+
+        if fan_speed_pct is not None:
+            data['fan_speed_pct'] = int(fan_speed_pct)
+        elif aux_fan_speed_pct is not None:
+            data['aux_fan_speed_pct'] = int(aux_fan_speed_pct)
+        elif box_fan_level is not None:
+            data['box_fan_level'] = int(box_fan_level)
+        else:
+            return None
+
+        return await self._send_anycubic_order(
+            order_request=AnycubicProjectOrderRequest(
+                order_id=AnycubicOrderID.SET_FAN_SPEED,
+                printer_id=printer.id,
+                project_id=0,
+                order_data=data,
+            ),
+        )
+
+    async def _send_order_move_axis(
+        self,
+        printer: AnycubicPrinter,
+        axis: int,
+        move_type: int,
+        distance: int = 0,
+    ) -> str | None:
+        """Move or home an axis.
+
+            {"axis": 1|2|3|4, "move_type": 0|1|2, "distance": mm}
+
+        axis      1 X, 2 Y, 3 Z, 4 all
+        move_type 0 minus, 1 plus, 2 home (distance ignored)
+
+        ⚠ The printer refuses moves until it has been homed, and its own UI
+        warns about nozzle-to-bed collisions -- so callers should home first
+        and keep steps small.
+        """
+        if not printer:
+            return None
+
+        return await self._send_anycubic_order(
+            order_request=AnycubicProjectOrderRequest(
+                order_id=AnycubicOrderID.MOVE_AXLE,
+                printer_id=printer.id,
+                project_id=0,
+                order_data={
+                    'axis': int(axis),
+                    'move_type': int(move_type),
+                    'distance': int(distance),
+                },
+            ),
+        )
+
     async def _send_order_multi_color_box_dry(
         self,
         printer: AnycubicPrinter,
