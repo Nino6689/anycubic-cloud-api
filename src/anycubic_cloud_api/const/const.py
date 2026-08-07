@@ -45,3 +45,9 @@ ACCESS_TOKEN_LOGIN_RETRY_INTERVAL = 2
 
 class AnycubicServerMessage:
     FILE_NOT_FOUND = "No file found"
+
+# AI print-failure detection. 3 is what the slicer sends to enable and 0
+# to disable -- both confirmed by watching the printer echo the setting
+# back, rather than by trusting the server's response.
+AI_DETECTION_ON = 3
+AI_DETECTION_OFF = 0

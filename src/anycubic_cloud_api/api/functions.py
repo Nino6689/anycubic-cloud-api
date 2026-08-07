@@ -10,6 +10,8 @@ from typing import (
 
 from ..const.api_endpoints import API_ENDPOINT
 from ..const.const import (
+    AI_DETECTION_OFF,
+    AI_DETECTION_ON,
     MAX_PROJECT_IMAGE_SEARCH_COUNT,
     MAX_PROJECT_LIST_RESULTS,
     AnycubicServerMessage,
@@ -590,6 +592,39 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
                 order_id=AnycubicOrderID.SET_FAN_SPEED,
                 printer_id=printer.id,
                 order_data=data,
+            ),
+        )
+
+    async def _send_order_set_ai_detection(
+        self,
+        printer: AnycubicPrinter,
+        enabled: bool,
+    ) -> str | None:
+        """Turn AI print-failure detection on or off.
+
+        The printer echoes the whole settings block back, so the values it is
+        already using are preserved and only `status` is changed -- 3 is what
+        the slicer sends to enable, 0 to disable, both confirmed by watching
+        the reply.
+        """
+        if not printer:
+            return None
+
+        current = printer.ai_settings or {}
+
+        settings = {
+            'status': AI_DETECTION_ON if enabled else AI_DETECTION_OFF,
+            'type': current.get('type', 2),
+            'count': current.get('count', 60),
+            'sensitivity_level': current.get('sensitivity_level', [1, 1]),
+            'notice_type': current.get('notice_type', [0, 1]),
+        }
+
+        return await self._send_anycubic_order(
+            order_request=AnycubicPrinterOrderRequest(
+                order_id=AnycubicOrderID.SET_AI_SETTINGS,
+                printer_id=printer.id,
+                order_data={'ai_settings': settings},
             ),
         )
 

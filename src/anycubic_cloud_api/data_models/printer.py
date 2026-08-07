@@ -3031,6 +3031,12 @@ class AnycubicPrinter:
             distance=distance,
         )
 
+    async def set_ai_detection(self, enabled: bool) -> str | None:
+        """Turn AI print-failure detection on or off."""
+        return await self._api_parent._send_order_set_ai_detection(
+            printer=self, enabled=enabled,
+        )
+
     async def disengage_motors(self) -> str | None:
         """Release the steppers so the gantry can be pushed by hand.
 

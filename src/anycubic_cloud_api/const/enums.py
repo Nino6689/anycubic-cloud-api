@@ -64,6 +64,7 @@ class AnycubicOrderID(IntEnum):
     SET_TEMPERATURE = 1216
     # Fan speeds directly, again without needing a running job.
     SET_FAN_SPEED = 1221
+    SET_AI_SETTINGS = 1243
     FEED_RESIN = 1224  # Not handled
     M7_AUTO_OPERATION = 1225  # Not handled
     CYCLIC_CLEANING = 1226  # Not handled
