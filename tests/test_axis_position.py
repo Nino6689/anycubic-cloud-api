@@ -75,8 +75,24 @@ class TestMqttDispatch:
 
         with pytest.raises(AnycubicMQTTUnknownUpdate):
             printer.process_mqtt_update(
-                "a/b/c/d/e/f/g/axis/report", self._msg(action="move")
+                "a/b/c/d/e/f/g/axis/report", self._msg(action="somethingelse")
             )
+
+    def test_a_move_report_marks_the_motion_finished(self):
+        """The only completion signal a jog or a home ever gives.
+
+        It carries no coordinates -- `data` is null -- so a position still
+        has to be asked for separately.
+        """
+        printer = self._printer()
+        # A real move report carries no data at all.
+        payload = self._msg(action="move", data=None)
+
+        printer.process_mqtt_update("a/b/c/d/e/f/g/axis/report", payload)
+
+        assert printer.axis_move_state == "done"
+        assert printer.axis_is_moving is False
+        assert payload.is_empty, f"left behind: {payload.remaining_data}"
 
 
 class TestCloudFileSummary:

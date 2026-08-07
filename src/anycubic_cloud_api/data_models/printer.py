@@ -911,7 +911,14 @@ class AnycubicPrinter:
             # position comes with it, so anything wanting coordinates has to
             # ask for them afterwards with QUERY_AXIS_POSITION.
             self._axis_move_state = str(state)
-            payload['data']
+
+            # Real move reports carry `data: null`, but drain anything nested
+            # if a firmware ever does send some -- unread keys raise at the
+            # end of dispatch.
+            data = payload['data']
+            if isinstance(data, dict):
+                for nested in list(data):
+                    data.get(nested)
 
             return
 
