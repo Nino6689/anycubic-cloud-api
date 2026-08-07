@@ -371,7 +371,14 @@ class AnycubicAPIBase:
             await self.get_user_info()
             return True
         except AnycubicAuthTokensExpired:
-            self._log_to_debug("Tokens expired.")
+            # Not an expiry check -- this is raised when the server answers
+            # without a user object at all. Saying "expired" sends whoever
+            # reads the debug log off inspecting the token's exp claim, which
+            # is exactly the wrong place to look.
+            self._log_to_debug(
+                "Server returned no user for these credentials "
+                "(rejected or not recognised)."
+            )
             return False
 
     async def check_api_tokens(self) -> bool:
