@@ -234,14 +234,19 @@ class AnycubicPrinter:
         self._set_multi_color_box(multi_color_box)
 
         self._latest_project: AnycubicProject | None = None
-        self._fan_speed: int = 0
+        # None until the printer says so. It used to default to 0, which
+        # is indistinguishable from a fan that is genuinely stopped.
+        self._fan_speed: int | None = None
         self._print_speed_pct: int = 0
         self._print_speed_mode: int = 0
         self._local_file_list: list[AnycubicFile] | None = None
         self._udisk_file_list: list[AnycubicFile] | None = None
-        self._has_peripheral_camera: bool = False
-        self._has_peripheral_multi_color_box: bool = False
-        self._has_peripheral_udisk: bool = False
+        # None until the printer has answered the peripherals poll. "No
+        # camera" and "never asked" are different answers and something that
+        # decides whether to offer a camera entity has to tell them apart.
+        self._has_peripheral_camera: bool | None = None
+        self._has_peripheral_multi_color_box: bool | None = None
+        self._has_peripheral_udisk: bool | None = None
         self._is_bound_to_user: bool = True
         self._job_download_progress: int = 0
         self._aux_fan_speed: int | None = None
@@ -1811,6 +1816,17 @@ class AnycubicPrinter:
         ])
 
     @property
+    def fan_speed_pct(self) -> int | None:
+        """The model fan as the PRINTER reports it.
+
+        Not the same as the sliced job's setting, which is what the project
+        carries and which reads 0 on an idle printer -- the fan entity showed
+        a confident 0% for exactly that reason. Parsed from MQTT since
+        forever, but never exposed, so nothing could read it.
+        """
+        return self._fan_speed
+
+    @property
     def aux_fan_speed_pct(self) -> int | None:
         return self._aux_fan_speed
 
@@ -1849,19 +1865,19 @@ class AnycubicPrinter:
         return self._lights[light_type]['brightness']
 
     @property
-    def has_peripheral_camera(self) -> bool:
+    def has_peripheral_camera(self) -> bool | None:
         return self._has_peripheral_camera
 
     @property
-    def has_peripheral_multi_color_box(self) -> bool:
+    def has_peripheral_multi_color_box(self) -> bool | None:
         return self._has_peripheral_multi_color_box
 
     @property
-    def has_peripheral_udisk(self) -> bool:
+    def has_peripheral_udisk(self) -> bool | None:
         return self._has_peripheral_udisk
 
     @property
-    def connected_peripherals(self) -> dict[str, bool]:
+    def connected_peripherals(self) -> dict[str, bool | None]:
         return {
             "camera": self.has_peripheral_camera,
             "ace": self.has_peripheral_multi_color_box,

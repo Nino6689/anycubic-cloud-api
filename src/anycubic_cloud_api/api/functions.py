@@ -30,6 +30,7 @@ from ..data_models.orders import (
     AnycubicCameraOpenOrderRequest,
     AnycubicProjectCtrlOrderRequest,
     AnycubicPrinterOrderRequest,
+    AnycubicPrinterQueryOrderRequest,
     AnycubicProjectOrderRequest,
     AnycubicShengwangCredentials,
     AnycubicStartPrintRequestCloud,
@@ -942,21 +943,21 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
             ),
         )
 
-    async def _send_order_query_peripherals(
+    async def send_order_query_peripherals(
         self,
         printer: AnycubicPrinter,
     ) -> str | None:
-        """
-        Response is sent over MQTT.
+        """Ask which peripherals are fitted. Answered over MQTT.
+
+        This is what tells us whether a camera exists at all.
         """
         if not printer:
             return None
 
         return await self._send_anycubic_order(
-            order_request=AnycubicBaseProjectOrderRequest(
+            order_request=AnycubicPrinterQueryOrderRequest(
                 order_id=AnycubicOrderID.QUERY_PERIPHERALS,
                 printer_id=printer.id,
-                project_id=0,
             ),
         )
 
@@ -978,25 +979,27 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
             ),
         )
 
-    async def _send_order_get_light_status(
+    async def send_order_get_light_status(
         self,
         printer: AnycubicPrinter,
-        project: AnycubicProject,
     ) -> str | None:
-        """
-        Response is sent over MQTT.
+        """Ask the printer to report its lights. Answered over MQTT.
+
+        The light entity only knows a light exists once the printer has
+        mentioned one, so without this it stays unavailable on an idle
+        printer until some unrelated action makes it volunteer the state.
+
+        This used to demand a project and send its id, which is why it never
+        fired when there was nothing printing -- exactly when a user is most
+        likely to reach for the light.
         """
         if not printer:
             return None
 
-        if not project:
-            return None
-
         return await self._send_anycubic_order(
-            order_request=AnycubicBaseProjectOrderRequest(
+            order_request=AnycubicPrinterQueryOrderRequest(
                 order_id=AnycubicOrderID.GET_LIGHT_STATUS,
                 printer_id=printer.id,
-                project_id=project.id,
             ),
         )
 

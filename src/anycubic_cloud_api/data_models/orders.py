@@ -83,6 +83,32 @@ class AnycubicPrinterOrderRequest(AnycubicBaseOrderRequest):
         )
 
 
+class AnycubicPrinterQueryOrderRequest(AnycubicBaseOrderRequest):
+    """A bare printer-level poll: order id and printer id, nothing else.
+
+    The slicer's peripheral and light-status polls carry no ``data`` and no
+    ``project_id``, and their order id is a STRING. Sent any other way the
+    server still answers "Operation successful" and the printer never
+    replies -- which is why nothing ever knew whether a camera was fitted,
+    and why the light entity stayed unavailable until some other action
+    happened to make the printer volunteer its state.
+    """
+
+    @property
+    def order_request_data(self) -> dict[str, Any]:
+        return {
+            **super().order_request_data,
+            'order_id': str(self._order_id),
+        }
+
+    def __repr__(self) -> str:
+        return (
+            f"AnycubicPrinterQueryOrderRequest("
+            f"order_id={self._order_id}, "
+            f"printer_id={self._printer_id})"
+        )
+
+
 class AnycubicBaseProjectOrderRequest(AnycubicBaseOrderRequest):
     __slots__ = (
         "_project_id",
