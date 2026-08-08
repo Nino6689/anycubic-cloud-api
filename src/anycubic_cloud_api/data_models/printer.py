@@ -55,13 +55,23 @@ def _drain(consumable: Any) -> dict[str, Any]:
     Reading is what marks a key consumed, and the payload contract fails loudly
     on anything left behind -- so blocks whose keys vary by model are taken
     wholesale rather than named one by one.
+
+    ⚠ It has to reach all the way down. A nested payload only counts as read
+    once it is itself empty, so reading the key holding one leaves both behind.
+    That was latent for a long time: ``last_project`` is null until a print
+    finishes, and the moment one did it arrived carrying a nested block, failed
+    the contract, and took the whole report with it -- every local reading
+    frozen from the end of the first print onwards.
     """
     if not consumable:
         return {}
 
     drained = dict(consumable.remaining_data)
 
-    for key in list(drained):
+    for key, value in list(drained.items()):
+        if hasattr(value, 'remaining_data'):
+            _drain(value)
+
         consumable.get(key)
 
     return drained
@@ -75,6 +85,11 @@ class AnycubicPrinter:
         "_ai_settings",
         "_chamber_temp",
         "_target_chamber_temp",
+        # What the hotend and bed are aiming for. Normally carried on the
+        # print job, which only the cloud supplies -- so a printer reached
+        # locally reported no setpoint at all, however hot it was getting.
+        "_target_nozzle_temp",
+        "_target_hotbed_temp",
         "_local_firmware_version",
         "_local_ip",
         "_ignore_init_errors",
@@ -416,6 +431,66 @@ class AnycubicPrinter:
             return
 
         self._parameter.update_current_temps(hotbed, nozzle)
+
+    def _apply_lan_project(self, project: Any) -> None:
+        """Track the running job from the printer's own report of it.
+
+        Only the local connection sends this. Over the cloud the job comes
+        from the account's project list, which a printer in LAN Mode is no
+        longer part of -- so without this a print could be visibly running
+        while every job sensor read unavailable, and pause and cancel refused
+        for want of an id to name the job by.
+
+        The block is read wholesale because its keys vary with what the
+        printer is doing; the fields that are not modelled would otherwise
+        fail the payload contract.
+        """
+        data = _drain(project)
+
+        if not data:
+            # Idle printers send null here. Holding on to the last job would
+            # leave a finished print looking like a running one.
+            self._latest_project = None
+            return
+
+        task_id = data.get('task_id')
+
+        if (
+            self._latest_project is None
+            or task_id is None
+            or int(task_id) != self._latest_project.id
+        ):
+            self._latest_project = AnycubicProject.from_lan_project(
+                self._api_parent, self._id, data
+            )
+
+        if self._latest_project is None:
+            return
+
+        self._latest_project.update_with_mqtt_print_status_data(
+            AnycubicPrintStatus(int(data.get('print_status') or 0)),
+            data,
+            paused=data.get('pause'),
+        )
+        self._latest_project.set_local_print_setting(
+            'supplies_usage', data.get('supplies_usage')
+        )
+
+    def _apply_target_temps(self, hotbed: Any, nozzle: Any) -> None:
+        """Remember what the printer is aiming for.
+
+        These normally live on the print job, because over the cloud that is
+        the only thing that ever sets them. Locally there is no job -- the
+        cloud has dropped the printer entirely -- yet the printer still has a
+        setpoint and still reports it, so it is kept here as well. Without
+        this, preheating a printer over the local connection worked and looked
+        like it had not: the nozzle climbed while the target read unknown.
+        """
+        if hotbed is not None:
+            self._target_hotbed_temp = int(hotbed)
+
+        if nozzle is not None:
+            self._target_nozzle_temp = int(nozzle)
 
     def _set_parameter(
         self,
@@ -954,6 +1029,7 @@ class AnycubicPrinter:
             self._target_chamber_temp = data.get('target_chamber_temp')
 
             self._apply_current_temps(curr_hotbed, curr_nozzle)
+            self._apply_target_temps(target_hotbed, target_nozzle)
 
             if self._latest_project:
                 self._latest_project.update_target_temps(target_hotbed, target_nozzle)
@@ -1316,6 +1392,10 @@ class AnycubicPrinter:
                 temp.get('curr_hotbed_temp'),
                 temp.get('curr_nozzle_temp'),
             )
+            self._apply_target_temps(
+                temp.get('target_hotbed_temp'),
+                temp.get('target_nozzle_temp'),
+            )
             # A Kobra S1 reports chamber temperatures of zero because it has no
             # chamber sensor, so they are kept raw rather than turned into an
             # always-zero entity.
@@ -1323,8 +1403,16 @@ class AnycubicPrinter:
             self._target_chamber_temp = temp.get('target_chamber_temp')
             _drain(temp)
 
+        # All three fans, on the same footing. The fan report carries them too,
+        # but this snapshot is the first thing a local connection asks for and
+        # the first to answer -- reading only the part fan here left the other
+        # two empty until a separate reply arrived.
         if 'fan_speed_pct' in data:
             self._fan_speed = int(data['fan_speed_pct'])
+        if 'aux_fan_speed_pct' in data:
+            self._aux_fan_speed = int(data['aux_fan_speed_pct'])
+        if 'box_fan_level' in data:
+            self._box_fan_level = int(data['box_fan_level'])
         if 'print_speed_mode' in data:
             self._print_speed_mode = int(data['print_speed_mode'])
 
@@ -1349,10 +1437,11 @@ class AnycubicPrinter:
         # covered by the print report.
         data.get('printerName')
         data.get('model')
-        data.get('project')
-        data.get('last_project')
-        data.get('aux_fan_speed_pct')
-        data.get('box_fan_level')
+        self._apply_lan_project(data.get('project'))
+
+        # Whatever ran before this one. Nothing reads it yet, and the printer
+        # sends null for it far more often than not.
+        _drain(data.get('last_project'))
         _drain(data)
 
     def _process_mqtt_update_ai_settings(
@@ -2361,9 +2450,15 @@ class AnycubicPrinter:
     @property
     def latest_project_target_nozzle_temp(self) -> int | None:
         if self.latest_project:
-            return self.latest_project.target_nozzle_temp
+            from_project = self.latest_project.target_nozzle_temp
 
-        return None
+            if from_project is not None:
+                return from_project
+
+        # The printer reports its setpoint whether or not a job knows it. A
+        # job built from the printer's own report carries no temperatures, so
+        # without this a local print showed no target while visibly heating.
+        return getattr(self, '_target_nozzle_temp', None)
 
     @property
     def latest_project_temp_min_nozzle(self) -> int | None:
@@ -2382,9 +2477,12 @@ class AnycubicPrinter:
     @property
     def latest_project_target_hotbed_temp(self) -> int | None:
         if self.latest_project:
-            return self.latest_project.target_hotbed_temp
+            from_project = self.latest_project.target_hotbed_temp
 
-        return None
+            if from_project is not None:
+                return from_project
+
+        return getattr(self, '_target_hotbed_temp', None)
 
     @property
     def latest_project_temp_min_hotbed(self) -> int | None:

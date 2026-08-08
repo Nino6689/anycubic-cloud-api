@@ -33,6 +33,25 @@ class AnycubicBaseOrderRequest:
             'printer_id': self._printer_id,
         }
 
+    @property
+    def order_id(self) -> int:
+        return self._order_id
+
+    @property
+    def order_data(self) -> dict[str, Any] | None:
+        """The order's payload, for a transport that carries it differently.
+
+        Sending an order locally reuses this untouched -- the cloud and the
+        printer's own broker take the same data -- so it is read here rather
+        than rebuilt. Requests with no payload of their own keep this None.
+        """
+        return None
+
+    @property
+    def project_id(self) -> int | None:
+        """The project this order belongs to, if it belongs to one."""
+        return None
+
     def __repr__(self) -> str:
         return (
             f"AnycubicBaseOrderRequest("
@@ -56,10 +75,12 @@ class AnycubicPrinterOrderRequest(AnycubicBaseOrderRequest):
 
     def __init__(
         self,
-        order_data: dict[str, Any] = {},
+        order_data: dict[str, Any] | None = {},
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
+        # None is deliberate for orders with no payload of their own -- see
+        # the base class -- and reaches the wire as a null the server expects.
         self._order_data = order_data
 
     @property
@@ -73,6 +94,10 @@ class AnycubicPrinterOrderRequest(AnycubicBaseOrderRequest):
             'order_id': str(self._order_id),
             'data': self._order_data,
         }
+
+    @property
+    def order_data(self) -> dict[str, Any] | None:
+        return self._order_data
 
     def __repr__(self) -> str:
         return (
@@ -129,6 +154,10 @@ class AnycubicBaseProjectOrderRequest(AnycubicBaseOrderRequest):
             'project_id': self._project_id,
         }
 
+    @property
+    def project_id(self) -> int | None:
+        return self._project_id
+
     def __repr__(self) -> str:
         return (
             f"AnycubicBaseProjectOrderRequest("
@@ -157,6 +186,10 @@ class AnycubicProjectOrderRequest(AnycubicBaseProjectOrderRequest):
             **super().order_request_data,
             'data': self._order_data,
         }
+
+    @property
+    def order_data(self) -> dict[str, Any] | None:
+        return self._order_data
 
     def __repr__(self) -> str:
         return (

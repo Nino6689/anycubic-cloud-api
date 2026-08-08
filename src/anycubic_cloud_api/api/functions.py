@@ -57,6 +57,7 @@ from ..exceptions.exceptions import (
     AnycubicFileNotFoundError,
     AnycubicGcodeParsingError,
 )
+from ..lan.commands import lan_command_for_order
 from ..models.cloud_upload import AnycubicCloudUpload
 from .base import AnycubicAPIBase
 
@@ -417,6 +418,16 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
         order_request: AnycubicBaseOrderRequest,
         raw_data: bool = False,
     ) -> str | None | dict[str, Any]:
+        # The cloud cannot reach a printer that has gone local, so anything
+        # with a local form goes that way instead. Orders wanting the raw
+        # response are asking for a cloud reply specifically -- the camera's
+        # credentials come back that way -- and are never diverted.
+        if not raw_data:
+            lan_msgid = self._send_anycubic_order_over_lan(order_request)
+
+            if lan_msgid is not None:
+                return lan_msgid
+
         params = order_request.order_request_data
 
         resp = await self._fetch_api_resp(endpoint=API_ENDPOINT.send_order, params=params)
@@ -437,6 +448,49 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
             self._log_to_error(f"Empty reply when sending order to Anycubic Cloud, message: {error_message}")
 
         return data
+
+    def _send_anycubic_order_over_lan(
+        self,
+        order_request: AnycubicBaseOrderRequest,
+    ) -> str | None:
+        """Send an order to the printer directly, or report that it cannot be.
+
+        Returns None when there is nothing to send it over or no verified
+        local form of this order, which leaves the caller to fall back to the
+        cloud.
+        """
+        if not self.lan_is_connected:
+            return None
+
+        command = lan_command_for_order(order_request.order_id)
+
+        if command is None:
+            return None
+
+        data = order_request.order_data
+
+        if command.needs_taskid:
+            project_id = order_request.project_id
+
+            if project_id is None:
+                return None
+
+            # A string, as the slicer sends it, and merged into whatever the
+            # order already carries -- a settings change keeps its settings.
+            data = {**(data or {}), 'taskid': str(project_id)}
+
+        msgid: str = self._lan_client.publish_command(
+            command.message_type,
+            command.action,
+            data,
+        )
+
+        self._log_to_debug(
+            f"Sent {order_request.order_id} to the printer locally as "
+            f"{command.message_type}/{command.action}, msgid {msgid}."
+        )
+
+        return msgid
 
     async def _send_order_multi_color_box_set_slot(
         self,
@@ -1102,15 +1156,12 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
     async def _send_order_set_light_status(
         self,
         printer: AnycubicPrinter,
-        project: AnycubicProject,
+        project: AnycubicProject | None,
         light_on: bool,
         light_type: int | None = None,
         brightness: int | None = None,
     ) -> str | None:
         if not printer:
-            return None
-
-        if not project:
             return None
 
         # Printers report their own light type (the Kobra S1 uses 2), so prefer
@@ -1123,6 +1174,21 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
             'status': 1 if light_on else 0,
             'brightness': int(brightness if brightness is not None else 100) if light_on else 0,
         }
+
+        # The light belongs to the printer, not to a print job, and the slicer
+        # sends it with no project at all. This used to refuse without one,
+        # which quietly made the light undimmable on any printer the cloud
+        # lists no projects for -- including every printer in LAN Mode, since
+        # going local removes it from the account. The project is still sent
+        # when there is one, because that is the form proven against the cloud.
+        if project is None:
+            return await self._send_anycubic_order(
+                order_request=AnycubicPrinterOrderRequest(
+                    order_id=AnycubicOrderID.SET_LIGHT_STATUS,
+                    printer_id=printer.id,
+                    order_data=order_data,
+                ),
+            )
 
         return await self._send_anycubic_order(
             order_request=AnycubicProjectOrderRequest(
@@ -2228,21 +2294,19 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
         if not printer:
             return None
 
-        await self._send_order_query_peripherals(
+        # Both of these were renamed when they became bare printer-level polls
+        # in 0.4.17; this caller kept the old private names and had been
+        # raising AttributeError on every MQTT subscribe ever since.
+        await self.send_order_query_peripherals(
             printer=printer,
         )
 
-        if not project and not printer.latest_project:
-            return None
-
-        if not project:
-            project = printer.latest_project
-
-        assert project
-
-        await self._send_order_get_light_status(
+        # The light belongs to the printer, so asking about it never needed a
+        # print job. This used to return early without one, leaving the
+        # question unasked exactly when it matters -- on an idle printer,
+        # which is when someone reaches for the light.
+        await self.send_order_get_light_status(
             printer=printer,
-            project=project,
         )
 
     async def multi_color_box_get_info(
@@ -2272,9 +2336,6 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
 
         if not project:
             project = printer.latest_project
-
-        if not project:
-            return None
 
         await self._send_order_set_light_status(
             printer=printer,

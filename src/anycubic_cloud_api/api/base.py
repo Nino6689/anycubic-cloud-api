@@ -46,6 +46,7 @@ class AnycubicAPIBase:
         "_log_api_call_info",
         "_last_warn_api_duration",
         "_anycubic_auth",
+        "_lan_client",
     )
 
     def __init__(
@@ -70,6 +71,7 @@ class AnycubicAPIBase:
         self._log_api_call_info: bool = False
         self._last_warn_api_duration: int | None = None
         self._anycubic_auth: AnycubicAuthentication | None = None
+        self._lan_client: Any = None
 
         if auth_token:
             self.set_authentication(
@@ -81,6 +83,24 @@ class AnycubicAPIBase:
     @property
     def base_url(self) -> str:
         return self._base_url
+
+    def set_lan_client(self, lan_client: Any) -> None:
+        """Attach, or with None detach, the printer's local connection.
+
+        Held here because orders are sent from here. A printer answering
+        locally has left the cloud behind -- LAN Mode drops its cloud
+        connection, and the cloud stops listing it at all -- so once this is
+        set, orders that have a local form stop going out over the internet.
+        """
+        self._lan_client = lan_client
+
+    @property
+    def lan_client(self) -> Any:
+        return self._lan_client
+
+    @property
+    def lan_is_connected(self) -> bool:
+        return self._lan_client is not None and bool(self._lan_client.is_connected)
 
     def set_log_api_call_info(
         self,

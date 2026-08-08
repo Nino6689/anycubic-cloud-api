@@ -5,6 +5,7 @@ LAN Mode. The payload contract fails loudly on any key left unread, so these
 double as a check that nothing in a real report goes unhandled.
 """
 
+from copy import deepcopy
 from unittest.mock import MagicMock
 
 import pytest
@@ -139,6 +140,36 @@ class TestInfoReport:
         assert printer._fan_speed == 0
         assert printer._print_speed_mode == 2
 
+    def test_the_setpoints_survive_having_no_print_job(self):
+        """Target temperatures normally live on the job, which only the cloud
+        supplies. Locally there is none, so preheating worked and looked like
+        it had not -- the nozzle climbed while the target read unknown."""
+        printer = make_printer()
+        report = deepcopy(INFO_REPORT)
+        report["data"]["temp"]["target_nozzle_temp"] = 210
+        report["data"]["temp"]["target_hotbed_temp"] = 60
+
+        apply(printer, report)
+
+        assert printer.latest_project is None
+        assert printer.latest_project_target_nozzle_temp == 210
+        assert printer.latest_project_target_hotbed_temp == 60
+
+    def test_all_three_fans_are_applied(self):
+        """This snapshot answers first, so reading only one fan left the other
+        two empty until a separate reply happened to arrive."""
+        printer = make_printer()
+        report = deepcopy(INFO_REPORT)
+        report["data"]["fan_speed_pct"] = 40
+        report["data"]["aux_fan_speed_pct"] = 70
+        report["data"]["box_fan_level"] = 2
+
+        apply(printer, report)
+
+        assert printer.fan_speed_pct == 40
+        assert printer.aux_fan_speed_pct == 70
+        assert printer.box_fan_level == 2
+
     def test_a_chamberless_printer_reports_nothing_for_it(self):
         """A Kobra S1 has no chamber sensor and simply omits the fields."""
         printer = make_printer()
@@ -261,6 +292,17 @@ class TestQueryActionReplies:
 
     def test_a_queried_temperature_report_is_applied(self):
         apply(make_printer(), self.TEMPERATURE)
+
+    def test_a_temperature_report_carries_the_setpoints(self):
+        """Verified live: the printer reports a target of 40 while preheating
+        locally, and nothing was reading it."""
+        printer = make_printer()
+        report = deepcopy(self.TEMPERATURE)
+        report["data"]["target_nozzle_temp"] = 40
+
+        apply(printer, report)
+
+        assert printer.latest_project_target_nozzle_temp == 40
 
 
 class TestAvailabilityFromLocalReports:
@@ -541,3 +583,176 @@ class TestLoadedSlotFallback:
         )
 
         assert printer.primary_multi_color_box_loaded_slot is None
+
+
+# Captured verbatim from a Kobra S1 mid-print in LAN Mode, 2026-08-08.
+LAN_JOB = {
+    "remain_time": 42,
+    "curr_layer": 3,
+    "total_layers": 5,
+    "supplies_usage": 120,
+    "print_time": 7,
+    "progress": 60,
+    "state": "printing",
+    "print_status": 1,
+    "filename": ".3mf_temp/0622-1002-Spectacular Wolt (1)_plate(01)_PLA_0.2_45s.gcode",
+    "pause": 0,
+    "project_type": 1,
+    "task_id": 614707220,
+    "localtask": "b92a60d8-44d0-4b2a-916f-e5f476a07143",
+    "task_settings": {"camera_timelapse": 0},
+    "print_speed_mode": None,
+}
+
+
+def info_with_job(job):
+    report = deepcopy(INFO_REPORT)
+    report["data"]["project"] = deepcopy(job) if job is not None else None
+    report["data"]["state"] = "busy" if job else "free"
+
+    return report
+
+
+class TestTheRunningJob:
+    """A printer in LAN Mode is off the account, so there is no cloud project
+    for a print to hang off. It reports the job itself, in the block this used
+    to throw away -- without which a print could be visibly running while every
+    job sensor read unavailable and pause refused for want of a task id."""
+
+    def _printing(self):
+        printer = make_printer()
+        apply(printer, info_with_job(LAN_JOB))
+
+        return printer
+
+    def test_a_job_is_built_from_what_the_printer_reports(self):
+        assert self._printing().latest_project is not None
+
+    def test_the_job_is_named_by_the_task_id_pause_needs(self):
+        """print/pause carries this id, and refuses without one."""
+        assert self._printing().latest_project.id == 614707220
+
+    def test_the_file_name_is_kept(self):
+        assert "Spectacular Wolt" in self._printing().latest_project_name
+
+    def test_progress_and_layers_are_read(self):
+        printer = self._printing()
+
+        assert printer.latest_project_progress_percentage == 60
+        assert printer.latest_project_print_current_layer == 3
+        assert printer.latest_project_print_total_layers == 5
+
+    def test_the_times_are_read(self):
+        printer = self._printing()
+
+        assert printer.latest_project_print_time_elapsed_minutes == 7
+        assert printer.latest_project_print_time_remaining_minutes == 42
+
+    def test_filament_used_is_read(self):
+        """The usual setter only updates what the cloud already sent, so a
+        locally-built job needs this written explicitly."""
+        assert self._printing().latest_project_print_supplies_usage == 120
+
+    def test_it_reads_as_printing_and_not_paused(self):
+        printer = self._printing()
+
+        assert printer.latest_project_print_in_progress is True
+        assert printer.latest_project_print_is_paused is False
+
+    def test_a_paused_job_reads_as_paused(self):
+        printer = make_printer()
+
+        apply(printer, info_with_job({**LAN_JOB, "pause": 1}))
+
+        assert printer.latest_project_print_is_paused is True
+
+    def test_the_setpoints_still_come_from_the_printer(self):
+        """A job built locally carries no temperatures, and reading it in
+        preference to the printer would show no target while it heats."""
+        report = info_with_job(LAN_JOB)
+        report["data"]["temp"]["target_nozzle_temp"] = 210
+
+        printer = make_printer()
+        apply(printer, report)
+
+        assert printer.latest_project_target_nozzle_temp == 210
+
+    def test_an_idle_printer_has_no_job(self):
+        """Holding the last one would leave a finished print looking live."""
+        printer = self._printing()
+
+        apply(printer, info_with_job(None))
+
+        assert printer.latest_project is None
+
+    def test_a_second_report_updates_rather_than_replaces(self):
+        printer = self._printing()
+        first = printer.latest_project
+
+        apply(printer, info_with_job({**LAN_JOB, "progress": 75, "curr_layer": 4}))
+
+        assert printer.latest_project is first
+        assert printer.latest_project_progress_percentage == 75
+
+    def test_a_different_job_replaces_the_old_one(self):
+        printer = self._printing()
+
+        apply(printer, info_with_job({**LAN_JOB, "task_id": 999, "progress": 1}))
+
+        assert printer.latest_project.id == 999
+
+    def test_the_whole_report_is_still_fully_consumed(self):
+        """The job block nests another, and a nested payload only counts as
+        read once it is already empty -- so the inner one must go first."""
+        apply(make_printer(), info_with_job(LAN_JOB))
+
+
+class TestTheFinishedJobBlock:
+    """`last_project` is null until a print finishes. The moment one did, it
+    arrived carrying a nested block, failed the payload contract and took the
+    whole report down with it -- so every local reading froze from the end of
+    the first print onwards. Captured verbatim from the printer."""
+
+    FINISHED = {
+        "remain_time": 0,
+        "curr_layer": 5,
+        "total_layers": 5,
+        "supplies_usage": 65,
+        "print_time": 2,
+        "progress": 100,
+        "state": "finished",
+        "print_status": 2,
+        "filename": ".3mf_temp/0622-1002-Spectacular Wolt (1)_plate(01)_PLA_0.2_45s.gcode",
+        "pause": 0,
+        "project_type": 1,
+        "task_id": 614707220,
+        "localtask": "b92a60d8-44d0-4b2a-916f-e5f476a07143",
+        "task_settings": {"camera_timelapse": 0},
+        "print_speed_mode": None,
+    }
+
+    def _report(self):
+        report = deepcopy(INFO_REPORT)
+        report["data"]["last_project"] = deepcopy(self.FINISHED)
+
+        return report
+
+    def test_a_finished_job_does_not_break_the_report(self):
+        apply(make_printer(), self._report())
+
+    def test_the_rest_of_the_report_still_lands(self):
+        """The real damage was collateral: one unread key and every reading
+        in the report was discarded."""
+        printer = make_printer()
+
+        apply(printer, self._report())
+
+        assert printer.local_firmware_version == "2.7.2.7"
+        assert printer.camera_stream_url == "http://10.0.66.28:18088/flv"
+
+    def test_a_finished_job_is_not_mistaken_for_a_running_one(self):
+        printer = make_printer()
+
+        apply(printer, self._report())
+
+        assert printer.latest_project is None

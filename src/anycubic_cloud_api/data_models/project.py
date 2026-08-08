@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from ..const.const import PROJECT_IMAGE_URL_BASE, REX_GCODE_EXT
@@ -252,6 +253,59 @@ class AnycubicProject:
         self._temp_min_nozzle: int | None = None
         self._temp_max_nozzle: int | None = None
         self._download_progress: int = 0
+
+    @classmethod
+    def from_lan_project(
+        cls,
+        api_parent: AnycubicAPI,
+        printer_id: int | str | None,
+        data: dict[str, Any] | None,
+    ) -> AnycubicProject | None:
+        """Build a job from what the printer reports about it.
+
+        Over the cloud a job is fetched from the account's project list, and
+        everything about a print -- its name, progress, layers, times -- hangs
+        off that record. A printer in LAN Mode has been removed from the
+        account, so no such record exists and there is nothing to hang any of
+        it on: with a print visibly running, every job sensor read unavailable
+        and the print controls refused, having no id to name the job by.
+
+        The printer volunteers the same facts in its own ``info`` report, so
+        the job is built from that instead. Only the fields the printer
+        actually sends are set -- nothing here is invented to fill a gap.
+        """
+        if not data:
+            return None
+
+        task_id = data.get('task_id')
+
+        if task_id is None:
+            return None
+
+        return cls(
+            api_parent=api_parent,
+            # The print report names the job by this same id, so the two match
+            # and an incoming status update is recognised as being about it.
+            id=task_id,
+            taskid=task_id,
+            printer_id=printer_id,
+            gcode_id=0,
+            gcode_name=data.get('filename') or '',
+            # Unknown locally rather than zero-as-a-fact: the printer reports
+            # elapsed and remaining, never a total, and the cloud's own
+            # estimate is not something it has.
+            estimate=0,
+            create_time=0,
+            progress=data.get('progress') or 0,
+            status=data.get('print_status') or 0,
+            print_status=data.get('print_status'),
+            remain_time=data.get('remain_time'),
+            print_time=data.get('print_time'),
+            pause=data.get('pause'),
+            project_type=data.get('project_type'),
+            localtask=data.get('localtask'),
+            print_speed_mode=data.get('print_speed_mode'),
+        )
 
     @classmethod
     def from_list_json(
@@ -625,7 +679,9 @@ class AnycubicProject:
     def update_with_mqtt_print_status_data(
         self,
         print_status: AnycubicPrintStatus,
-        mqtt_data: AnycubicConsumableData | None = None,
+        # Only read from, by key -- so a plain report dict off the wire is as
+        # good as the wrapped form, and both reach here.
+        mqtt_data: Mapping[str, Any] | None = None,
         paused: int | None = None,
         reason: str | None = None,
     ) -> None:
@@ -747,6 +803,21 @@ class AnycubicProject:
         key: str,
     ) -> Any:
         return self._settings.get(key)
+
+    def set_local_print_setting(
+        self,
+        key: str,
+        value: Any,
+    ) -> None:
+        """Record a value on a job the printer reported itself.
+
+        The usual setter only updates settings the cloud already supplied, so
+        it silently does nothing for a job built from a local report -- which
+        has none of them to begin with. Filament used would have stayed empty
+        for the whole print.
+        """
+        if value is not None:
+            self._settings[key] = value
 
     def _set_print_setting(
         self,

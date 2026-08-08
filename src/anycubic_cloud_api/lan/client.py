@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import json
 import ssl
+import time
 import uuid
 from collections.abc import Callable
 from typing import Any
@@ -63,6 +64,12 @@ LAN_QUERY_ACTIONS = {
     "multiColorBox": "getInfo",
     "print": "query",
     "aiSettings": "query",
+    # Which peripherals are fitted, and so whether there is a camera to offer.
+    # Over the cloud a separate poll asks for this, but that poll only runs
+    # while the cloud MQTT link is up -- which it never is for a printer in
+    # LAN Mode. Asked here instead, so a local printer is not permanently
+    # assumed to have no camera.
+    "peripherie": "query",
     # Head position and the external filament holder. Printers without one
     # simply stay silent rather than erroring, so asking costs nothing.
     "axis": "query",
@@ -268,6 +275,38 @@ class AnycubicLANClient:
             raise AnycubicLANError(ErrorsLAN.not_connected)
 
         self._client.publish(self.query_topic(message_type), json.dumps(payload))
+
+    def publish_command(
+        self,
+        message_type: str,
+        action: str,
+        data: dict[str, Any] | None = None,
+    ) -> str:
+        """Tell the printer to do something, and say which message said so.
+
+        The envelope is the slicer's, field for field: a millisecond timestamp
+        and a message id alongside the payload. Queries have always worked
+        without either, but a command is not a query, and the shape that is
+        known to drive hardware is the one worth sending.
+
+        The id is returned because the cloud returns one too -- the printer
+        echoes it in the report that follows, which is what tells a caller its
+        command was the one that took effect.
+        """
+        msgid = str(uuid.uuid4())
+
+        self.publish(
+            message_type,
+            {
+                "type": message_type,
+                "action": action,
+                "timestamp": int(time.time() * 1000),
+                "msgid": msgid,
+                "data": data,
+            },
+        )
+
+        return msgid
 
     def query(self, message_type: str) -> None:
         """Ask the printer to report one kind of state."""

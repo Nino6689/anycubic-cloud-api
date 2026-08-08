@@ -167,6 +167,12 @@ class TestPublishing:
         """A printer with no external holder stays silent rather than erroring."""
         assert "extfilbox" in LAN_QUERY_ACTIONS
 
+    def test_peripherals_are_asked_for(self):
+        """The cloud's peripherals poll only runs while the cloud MQTT link is
+        up, which it never is in LAN Mode -- so without this a local printer is
+        permanently assumed to have no camera."""
+        assert LAN_QUERY_ACTIONS["peripherie"] == "query"
+
     def test_the_firmware_misspelling_is_preserved(self):
         """The printer answers "tempature"; correcting it gets no reply."""
         assert "tempature" in LAN_QUERY_TYPES
