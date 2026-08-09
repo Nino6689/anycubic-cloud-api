@@ -48,3 +48,20 @@ where = ["src"]
 # The MQTT broker requires mutual TLS using Anycubic's own certificates, so
 # they must ship inside the wheel -- the client cannot connect without them.
 anycubic_cloud_api = ["resources/*.crt", "resources/*.key"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+# Only tests are linted in CI. src/ predates any ruff config and reports 291
+# findings under stock defaults nobody chose -- all style, no bugs -- so
+# enforcing them now would either land CI red or bury real changes in a
+# repo-wide reformat.
+target-version = "py312"
+
+[tool.ruff.lint.per-file-ignores]
+# Test fixtures are data, and these two rules are about production hygiene:
+# a shared dict literal on a stub class is the point, not a mistake.
+"tests/*" = ["RUF012", "C408"]
+

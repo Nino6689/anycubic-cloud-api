@@ -6,7 +6,6 @@ of the token cannot tell them apart -- the integration guessed slicer, sent it
 to a login endpoint that answered "User does not exist", and gave up.
 """
 
-import pytest
 
 from anycubic_cloud_api.models.auth import AnycubicAuthentication, AnycubicAuthMode
 

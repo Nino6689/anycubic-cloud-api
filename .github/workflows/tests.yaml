@@ -1,0 +1,50 @@
+name: Tests
+
+# This package had no CI at all: 229 tests that only ran when somebody
+# remembered to type pytest. That was tolerable while it was a thin wrapper
+# around one cloud, and stopped being tolerable the moment it started
+# resolving different infrastructure per region -- a broken URL here surfaces
+# to users as "Anycubic's servers are down", because api/base.py re-raises
+# every request failure as api_error_server_maintenance.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor is what pyproject promises; the ceiling is what Home
+        # Assistant actually runs. Both have to work or the promise is wrong.
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest pytest-asyncio ruff
+
+      # src/ is deliberately not linted. There is no ruff config in this repo,
+      # so ruff runs on stock defaults nobody chose, and reports 291 findings
+      # -- native-literals, unsorted __slots__, blind excepts. All style, no
+      # bugs. Turning that on now would either land CI red on arrival or force
+      # a 291-file reformat that buries the region change in noise. New code
+      # is linted, which is the same bargain the integration repo struck.
+      - name: Lint (tests)
+        run: ruff check tests
+
+      - name: Tests
+        run: pytest tests -q

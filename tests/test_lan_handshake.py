@@ -270,7 +270,6 @@ class TestNetworkFailures:
         ],
     )
     async def test_network_errors_become_a_readable_message(self, error):
-        import aiohttp
 
         session = MagicMock()
         session.request = MagicMock(side_effect=error)

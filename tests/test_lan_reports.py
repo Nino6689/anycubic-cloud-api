@@ -534,6 +534,7 @@ class TestLoadedSlotFallback:
 
     def _printer(self, loaded_slot, statuses):
         from unittest.mock import MagicMock
+
         from anycubic_cloud_api.data_models.printer import AnycubicPrinter
 
         slots = [
@@ -574,6 +575,7 @@ class TestLoadedSlotFallback:
 
     def test_a_box_with_no_slots_is_harmless(self):
         from unittest.mock import MagicMock
+
         from anycubic_cloud_api.data_models.printer import AnycubicPrinter
 
         printer = AnycubicPrinter(

@@ -18,15 +18,18 @@ from anycubic_cloud_api.data_models.project import AnycubicProject
 
 # from_list_json indexes every one of these, so a fixture has to carry them
 # all even though only `status` is under test.
-_KEYS = (
-    "id taskid user_id printer_id gcode_id model img estimate remain_time "
-    "material material_type pause progress connect_status print_status reason "
-    "slice_data slice_status status ischeck project_type printed create_time "
-    "start_time end_time slice_start_time slice_end_time total_time print_time "
-    "slice_param delete auto_operation monitor last_update_time settings "
-    "localtask source device_message signal_strength key type machine_type "
-    "printer_name machine_name device_status slice_result gcode_name post_title"
-).split()
+_KEYS = [
+    "id", "taskid", "user_id", "printer_id", "gcode_id", "model", "img",
+    "estimate", "remain_time", "material", "material_type", "pause",
+    "progress", "connect_status", "print_status", "reason", "slice_data",
+    "slice_status", "status", "ischeck", "project_type", "printed",
+    "create_time", "start_time", "end_time", "slice_start_time",
+    "slice_end_time", "total_time", "print_time", "slice_param", "delete",
+    "auto_operation", "monitor", "last_update_time", "settings", "localtask",
+    "source", "device_message", "signal_strength", "key", "type",
+    "machine_type", "printer_name", "machine_name", "device_status",
+    "slice_result", "gcode_name", "post_title",
+]
 
 
 def project_json(**overrides):
