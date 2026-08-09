@@ -34,6 +34,14 @@ from ..models.auth import AnycubicAuthentication, AnycubicAuthMode
 from ..models.http import HTTP_METHODS, AnycubicAPIEndpoint
 
 
+# `with_origin` has to distinguish three states: "the region's auth domain"
+# (the default), "this specific origin", and "send no Origin at all" (None).
+# A default argument is bound once at import, so it cannot follow per-instance
+# region -- and None is already taken. Hence a sentinel: it means "unset", and
+# is resolved against the instance at the single point of use.
+USE_REGION_ORIGIN: str = "__region_default__"
+
+
 class AnycubicAPIBase:
     __slots__ = (
         "_cached_web_auth_token_path",
@@ -135,7 +143,17 @@ class AnycubicAPIBase:
     # API Functions
     # ------------------------------------------
 
-    def _web_headers(self, with_origin: str | None = AUTH_DOMAIN) -> dict[str, Any]:
+    def _web_headers(self, with_origin: str | None = USE_REGION_ORIGIN) -> dict[str, Any]:
+        # The sentinel means the caller expressed no preference, so fall back
+        # to this instance's auth domain. `_fetch_ext_resp` and
+        # `_fetch_api_resp` only pass the value straight through to here, so
+        # resolving once at this single point covers all five signatures.
+        #
+        # `is` rather than `==`: None is a meaningful value here (send no
+        # Origin at all) and a truthiness test would swallow it.
+        if with_origin is USE_REGION_ORIGIN:
+            with_origin = AUTH_DOMAIN
+
         header_dict = {}
         if self.anycubic_auth.requires_user_agent:
             header_dict['User-Agent'] = DEFAULT_USER_AGENT
@@ -156,7 +174,7 @@ class AnycubicAPIBase:
         query: dict[str, Any] | None = None,
         params: dict[str, Any] = {},
         extra_headers: dict[str, Any] = {},
-        with_origin: str | None = AUTH_DOMAIN,
+        with_origin: str | None = USE_REGION_ORIGIN,
         put_data: bytes | None = None,
     ) -> dict[Any, Any]: ...
 
@@ -168,7 +186,7 @@ class AnycubicAPIBase:
         query: dict[str, Any] | None = None,
         params: dict[str, Any] = {},
         extra_headers: dict[str, Any] = {},
-        with_origin: str | None = AUTH_DOMAIN,
+        with_origin: str | None = USE_REGION_ORIGIN,
         put_data: bytes | None = None,
         is_json: bool = True,
         return_url: bool = False,
@@ -181,7 +199,7 @@ class AnycubicAPIBase:
         query: dict[str, Any] | None = None,
         params: dict[str, Any] | list[Any] | str | None = {},
         extra_headers: dict[str, Any] = {},
-        with_origin: str | None = AUTH_DOMAIN,
+        with_origin: str | None = USE_REGION_ORIGIN,
         put_data: bytes | None = None,
         is_json: bool = True,
         return_url: bool = False,
@@ -256,7 +274,7 @@ class AnycubicAPIBase:
         query: dict[str, Any] | None = None,
         params: dict[str, Any] = {},
         extra_headers: dict[str, Any] = {},
-        with_origin: str | None = AUTH_DOMAIN,
+        with_origin: str | None = USE_REGION_ORIGIN,
         with_token: bool = True,
     ) -> dict[Any, Any]:
         resp = await self._fetch_ext_resp(
