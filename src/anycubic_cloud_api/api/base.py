@@ -13,12 +13,15 @@ from ..const.api_endpoints import API_ENDPOINT
 from ..const.const import (
     ACCESS_TOKEN_LOGIN_RETRIES,
     ACCESS_TOKEN_LOGIN_RETRY_INTERVAL,
-    AUTH_DOMAIN,
-    BASE_DOMAIN,
     DEFAULT_USER_AGENT,
     MAX_API_FETCH_TIME_WARN,
-    PUBLIC_API_ENDPOINT,
     WARN_INTERVAL_API_DURATION,
+)
+from ..const.regions import (
+    REGIONS,
+    AnycubicEndpoints,
+    AnycubicRegion,
+    resolve_region,
 )
 from ..exceptions.error_strings import (
     ErrorsAPIParsing,
@@ -46,6 +49,7 @@ class AnycubicAPIBase:
     __slots__ = (
         "_cached_web_auth_token_path",
         "_base_url",
+        "_endpoints",
         "_public_api_root",
         "_session",
         "_sessionjar",
@@ -65,12 +69,15 @@ class AnycubicAPIBase:
         auth_token: str | None = None,
         auth_mode: AnycubicAuthMode | None = None,
         device_id: str | None = None,
+        region: AnycubicRegion | str | None = None,
     ) -> None:
         # Cache
         self._cached_web_auth_token_path: str | None = None
         # API
-        self._base_url: str = f"https://{BASE_DOMAIN}/"
-        self._public_api_root: str = f"{self.base_url}{PUBLIC_API_ENDPOINT}"
+        # Resolved once, here, and never changed: see AnycubicEndpoints.
+        self._endpoints: AnycubicEndpoints = REGIONS[resolve_region(region)]
+        self._base_url: str = self._endpoints.base_url
+        self._public_api_root: str = self._endpoints.public_api_root
         # Internal
         self._session: aiohttp.ClientSession = session
         self._sessionjar: aiohttp.CookieJar = cookie_jar
@@ -91,6 +98,19 @@ class AnycubicAPIBase:
     @property
     def base_url(self) -> str:
         return self._base_url
+
+    @property
+    def endpoints(self) -> AnycubicEndpoints:
+        """Every address this instance talks to, fixed at construction.
+
+        There is deliberately no setter. Changing region on a live object
+        would leave the cookie jar, the MQTT client id and any in-flight
+        session pointed at the previous deployment, and connect_mqtt runs in
+        an executor thread reconnecting on its own -- so the result would be
+        one client talking to two clouds. Changing region means rebuilding
+        the entry.
+        """
+        return self._endpoints
 
     def set_lan_client(self, lan_client: Any) -> None:
         """Attach, or with None detach, the printer's local connection.
@@ -152,7 +172,7 @@ class AnycubicAPIBase:
         # `is` rather than `==`: None is a meaningful value here (send no
         # Origin at all) and a truthiness test would swallow it.
         if with_origin is USE_REGION_ORIGIN:
-            with_origin = AUTH_DOMAIN
+            with_origin = self._endpoints.auth_domain
 
         header_dict = {}
         if self.anycubic_auth.requires_user_agent:

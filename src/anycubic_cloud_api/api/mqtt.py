@@ -22,7 +22,6 @@ except ImportError:  # paho-mqtt 1.x
     _MQTT_CALLBACK_API_VERSION = None
 
 from ..const.mqtt import (
-    MQTT_HOST,
     MQTT_PORT,
     MQTT_ROOT_TOPIC_PLUS,
     MQTT_ROOT_TOPIC_PRINTER,
@@ -402,8 +401,8 @@ class AnycubicMQTTAPI(AnycubicAPIFunctions):
         self._mqtt_client.reconnect_delay_set(5)
 
         self._mqtt_client.connect(
-            host=MQTT_HOST,
-            port=MQTT_PORT,
+            host=self._endpoints.mqtt_host,
+            port=self._endpoints.mqtt_port,
             keepalive=MQTT_TIMEOUT,
         )
 

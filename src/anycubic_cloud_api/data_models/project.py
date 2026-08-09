@@ -1199,7 +1199,15 @@ class AnycubicProject:
         img_endpoint = self._slice_param.get('image_id')
 
         if img_endpoint and isinstance(img_endpoint, str):
-            return str(PROJECT_IMAGE_URL_BASE + img_endpoint)
+            # Through the API object so it follows that entry's region. Falls
+            # back to the module constant if this project was built without a
+            # parent, which some construction paths in the tests do.
+            base = getattr(
+                getattr(self._api_parent, "endpoints", None),
+                "project_image_url_base",
+                PROJECT_IMAGE_URL_BASE,
+            )
+            return str(base + img_endpoint)
 
         return None
 
