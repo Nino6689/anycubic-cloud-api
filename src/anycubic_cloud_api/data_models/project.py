@@ -129,7 +129,7 @@ class AnycubicProject:
         gcode_id: int | str,
         estimate: int | str,
         progress: int | str,
-        status: int | str,
+        status: int | str | None,
         create_time: int | str,
         gcode_name: str,
         slice_param: str | dict[str, Any] | None = None,
@@ -441,8 +441,13 @@ class AnycubicProject:
     def _set_slice_status(self, slice_status: int | str | None) -> None:
         self._slice_status = int(slice_status) if slice_status is not None else None
 
-    def _set_status(self, status: int | str) -> None:
-        self._status = int(status)
+    def _set_status(self, status: int | str | None) -> None:
+        # The server does send status: null -- seen on the China region, but
+        # nothing about the field is region-specific, so any account can meet
+        # it. Every sibling setter here already tolerates None; this one did
+        # not, and raised TypeError from deep inside a data model, where it
+        # reads as a parse failure rather than a missing field.
+        self._status = int(status) if status is not None else None
 
     def _set_ischeck(self, ischeck: int | str | None) -> None:
         self._ischeck = int(ischeck) if ischeck is not None else None
