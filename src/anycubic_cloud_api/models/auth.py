@@ -424,10 +424,15 @@ class AnycubicAuthentication:
         )
         sig_md5 = md5_hex_of_string(user_token_sandwich)
 
+        # The identifier, not the email. Fixing only get_mqtt_client_id would
+        # have produced a correct client id alongside a username reading
+        # "user|<app_id>||<sig>" -- an empty field where the account's identity
+        # belongs -- which the broker would reject for a reason no log would
+        # explain. Both places have to agree on what identifies the account.
         sig_str = "{0}|{1}|{2}|{3}".format(
             "user",
             self.mqtt_app_id,
-            self.api_user_email,
+            self.api_user_identifier,
             sig_md5,
         )
 

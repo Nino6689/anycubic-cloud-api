@@ -105,3 +105,13 @@ class TestMqttClientIdWithoutEmail:
     def test_the_identifier_also_falls_back(self):
         assert self._auth("", "15010256036").api_user_identifier == "15010256036"
         assert self._auth("", "").api_user_identifier == "4242"
+
+    def test_the_mqtt_username_carries_the_same_identity(self):
+        """Client id and username must agree, or the broker sees a correct id
+        beside an empty identity field and rejects it with nothing to log."""
+        auth = self._auth("", "15010256036")
+        auth.set_access_token("tok")
+        username, _password = auth.get_mqtt_login_info()
+        fields = username.split("|")
+        assert fields[2] == "15010256036", f"identity field was {fields[2]!r}"
+        assert "||" not in username
