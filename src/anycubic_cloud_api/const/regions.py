@@ -54,6 +54,14 @@ class AnycubicEndpoints:
     mqtt_port: int
     public_api_endpoint: str
     project_image_url_base: str
+    # Whether the broker's certificate is expected to name mqtt_host. The
+    # international broker's does. The China broker presents a certificate
+    # that does NOT cover its public DNS name (field-verified:
+    # "certificate is not valid for 'mqtt.anycubicloud.com'"), and the
+    # Slicer connects to it regardless -- trust there rests on the pinned
+    # private Anycubic CA plus the client certificate, exactly as the LAN
+    # client already does. Verification against that CA stays on either way.
+    mqtt_verify_hostname: bool = True
 
     @property
     def base_url(self) -> str:
@@ -86,6 +94,7 @@ REGIONS: Mapping[AnycubicRegion, AnycubicEndpoints] = {
         base_domain="cloud-platform.anycubicloud.com",
         auth_domain="uc.makeronline.cn",
         mqtt_host="mqtt.anycubicloud.com",
+        mqtt_verify_hostname=False,
         # Not reported. 8883 is standard MQTT-over-TLS and matches the
         # international deployment; a wrong port here produces a silent,
         # permanent reconnect loop rather than an error, so it is worth

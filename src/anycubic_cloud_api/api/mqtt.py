@@ -277,7 +277,10 @@ class AnycubicMQTTAPI(AnycubicAPIFunctions):
         # hostname verification intact. No-op on older Python versions.
         ssl_context.verify_flags &= ~ssl.VERIFY_X509_STRICT
 
-        ssl_context.check_hostname = True
+        # China's broker presents a certificate that does not name its host;
+        # trust there is the pinned private CA + client certificate, so only
+        # the hostname comparison is waived, never the chain verification.
+        ssl_context.check_hostname = self._endpoints.mqtt_verify_hostname
         ssl_context.verify_mode = ssl.CERT_REQUIRED
 
         # Pin Anycubic's own root CA -- their broker certificate is issued by a
@@ -400,13 +403,23 @@ class AnycubicMQTTAPI(AnycubicAPIFunctions):
 
         self._mqtt_client.reconnect_delay_set(5)
 
-        self._mqtt_client.connect(
-            host=self._endpoints.mqtt_host,
-            port=self._endpoints.mqtt_port,
-            keepalive=MQTT_TIMEOUT,
-        )
+        try:
+            self._mqtt_client.connect(
+                host=self._endpoints.mqtt_host,
+                port=self._endpoints.mqtt_port,
+                keepalive=MQTT_TIMEOUT,
+            )
 
-        self._mqtt_client.loop_forever()
+            self._mqtt_client.loop_forever()
+        except BaseException:
+            # A client that never connected is not a started client.
+            # mqtt_is_started reads `_mqtt_client is not None`, so leaving the
+            # dead object here made the connection sensor report ON while
+            # last_error carried a TLS failure -- observed in the field.
+            self._mqtt_client = None
+            if self._mqtt_disconnected is not None:
+                self._mqtt_disconnected.set()
+            raise
         self._mqtt_client = None
         if self._mqtt_disconnected is not None:
             self._mqtt_disconnected.set()

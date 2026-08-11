@@ -118,3 +118,85 @@ class TestOriginHeader:
         headers = self.web_api()._web_headers(with_origin=None)
 
         assert "Origin" not in headers
+
+
+class TestMqttHostnameVerification:
+    """China's broker presents a certificate that does not name its host.
+
+    Field-verified in hass-anycubic#13: with full verification the handshake
+    fails "certificate is not valid for 'mqtt.anycubicloud.com'", while the
+    Slicer connects to the same broker using the same private CA. Trust there
+    is the pinned CA plus the client certificate; only the hostname comparison
+    is waived, and only for the region whose certificate is known not to match.
+    """
+
+    def test_international_still_verifies_the_hostname(self):
+        from anycubic_cloud_api.const.regions import REGIONS, AnycubicRegion
+
+        assert REGIONS[AnycubicRegion.INTERNATIONAL].mqtt_verify_hostname is True
+
+    def test_china_waives_only_the_hostname(self):
+        from anycubic_cloud_api.const.regions import REGIONS, AnycubicRegion
+
+        assert REGIONS[AnycubicRegion.CHINA].mqtt_verify_hostname is False
+
+
+class TestFailedConnectIsNotStarted:
+    """mqtt_is_started must not answer True after connect() raised.
+
+    It reads `_mqtt_client is not None`, and the client was created before the
+    connect call -- so a TLS failure left a dead object behind and the
+    connection sensor reported ON beside a last_error carrying the failure.
+    """
+
+    def test_a_raising_connect_leaves_the_client_cleared(self, monkeypatch):
+        import anycubic_cloud_api.api.mqtt as mqtt_mod
+        from unittest.mock import MagicMock
+
+        api = MagicMock()
+
+        fake = MagicMock()
+        fake.connect.side_effect = OSError("tls says no")
+        monkeypatch.setattr(
+            mqtt_mod.mqtt_client, "Client", MagicMock(return_value=fake)
+        )
+
+        real = mqtt_mod.AnycubicMQTTAPI.__new__(mqtt_mod.AnycubicMQTTAPI)
+        real._mqtt_client = None
+        real._mqtt_connected = None
+        real._mqtt_disconnected = None
+        real._mqtt_log_all_messages = False
+        auth = MagicMock()
+        # anycubic_auth is a read-only property; back the underlying slot.
+        real._anycubic_auth = auth
+        auth.get_mqtt_client_id.return_value = "cid"
+        auth.get_mqtt_login_info.return_value = ("u", "p")
+        real._endpoints = MagicMock()
+        real._endpoints.mqtt_host = "h"
+        real._endpoints.mqtt_port = 8883
+        real._endpoints.mqtt_verify_hostname = True
+        real._mqtt_build_ssl_context = MagicMock()
+        real._log_to_debug = MagicMock()
+
+        import pytest as _pytest
+        with _pytest.raises(OSError):
+            real.connect_mqtt()
+
+        assert real._mqtt_client is None
+        assert real.mqtt_is_started is False
+
+    def test_the_ssl_context_honours_the_flag(self):
+        """The table is only policy; the context is what talks to the broker."""
+        from unittest.mock import MagicMock
+
+        import anycubic_cloud_api.api.mqtt as mqtt_mod
+
+        api = mqtt_mod.AnycubicMQTTAPI.__new__(mqtt_mod.AnycubicMQTTAPI)
+        api._log_to_error = MagicMock()
+        for flag in (True, False):
+            api._endpoints = MagicMock()
+            api._endpoints.mqtt_verify_hostname = flag
+            ctx = api._mqtt_build_ssl_context()
+            assert ctx.check_hostname is flag
+            import ssl as _ssl
+            assert ctx.verify_mode is _ssl.CERT_REQUIRED
