@@ -57,7 +57,7 @@ class ErrorsFileNotFound:
 
 class ErrorsMQTTClient:
     client_id_missing_email = str(
-        "Unable to build mqtt_client_id, missing user email."
+        "Unable to build mqtt_client_id: the account has neither an email nor a mobile number."
     )
     pub_key_invalid = str(
         "Invalid Anycubic public key for MQTT signing."

@@ -471,5 +471,6 @@ class AnycubicAPIBase:
 
         self.anycubic_auth.set_api_user_id(data['id'])
         self.anycubic_auth.set_api_user_email(data.get('user_email'))
+        self.anycubic_auth.set_api_user_mobile(data.get('mobile'))
 
         return data

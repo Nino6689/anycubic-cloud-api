@@ -7,6 +7,10 @@ to a login endpoint that answered "User does not exist", and gave up.
 """
 
 
+import pytest
+
+from anycubic_cloud_api.exceptions.exceptions import AnycubicMQTTClientError
+from anycubic_cloud_api.helpers.helpers import md5_hex_of_string
 from anycubic_cloud_api.models.auth import AnycubicAuthentication, AnycubicAuthMode
 
 TOKEN = "eyJhbGciOiJSUzI1NiJ9.payload.signature"
@@ -63,3 +67,41 @@ class TestRetryingAsAWebToken:
 
         assert auth.retry_access_token_as_user_token() is False
         assert auth._auth_mode == AnycubicAuthMode.ANDROID
+
+
+class TestMqttClientIdWithoutEmail:
+    """China accounts register against a mobile number, not an email.
+
+    `user_info` returns `user_email: ""` for them, and the client id was
+    md5(email) with a hard raise on a falsy value -- so MQTT failed before a
+    socket was ever opened, and every China report chased TLS and ports
+    instead. Reported in hass-anycubic#13.
+    """
+
+    def _auth(self, email, mobile, user_id=4242):
+        auth = AnycubicAuthentication(auth_token=TOKEN)
+        auth.set_api_user_id(user_id)
+        auth.set_api_user_email(email)
+        auth.set_api_user_mobile(mobile)
+        return auth
+
+    def test_an_email_account_is_unchanged(self):
+        auth = self._auth("someone@example.com", None)
+        assert auth.get_mqtt_client_id() == md5_hex_of_string("someone@example.com")
+
+    def test_an_empty_email_falls_back_to_the_mobile(self):
+        auth = self._auth("", "15010256036")
+        assert auth.get_mqtt_client_id() == md5_hex_of_string("15010256036")
+
+    def test_the_email_still_wins_when_both_are_present(self):
+        auth = self._auth("someone@example.com", "15010256036")
+        assert auth.get_mqtt_client_id() == md5_hex_of_string("someone@example.com")
+
+    def test_neither_still_raises(self):
+        auth = self._auth("", "")
+        with pytest.raises(AnycubicMQTTClientError):
+            auth.get_mqtt_client_id()
+
+    def test_the_identifier_also_falls_back(self):
+        assert self._auth("", "15010256036").api_user_identifier == "15010256036"
+        assert self._auth("", "").api_user_identifier == "4242"

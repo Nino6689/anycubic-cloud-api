@@ -53,6 +53,7 @@ class AnycubicAuthentication:
         "_auth_access_token",
         "_api_user_id",
         "_api_user_email",
+        "_api_user_mobile",
     )
 
     def __init__(
@@ -74,6 +75,7 @@ class AnycubicAuthentication:
         self._auth_access_token: str | None = auth_access_token
         self._api_user_id: int | None = None
         self._api_user_email: str | None = None
+        self._api_user_mobile: str | None = None
         self._set_app_id()
         self._set_app_secret()
         self._set_version()
@@ -102,8 +104,12 @@ class AnycubicAuthentication:
         return self._api_user_email
 
     @property
+    def api_user_mobile(self) -> str | None:
+        return self._api_user_mobile
+
+    @property
     def api_user_identifier(self) -> str:
-        return self._api_user_email or str(self._api_user_id)
+        return self._api_user_email or self._api_user_mobile or str(self._api_user_id)
 
     @property
     def requires_user_agent(self) -> bool:
@@ -184,9 +190,18 @@ class AnycubicAuthentication:
 
     def set_api_user_email(
         self,
-        api_user_email: str,
+        api_user_email: str | None,
     ) -> None:
-        self._api_user_email = api_user_email
+        # Normalised, because the account API returns an empty string rather
+        # than omitting the field, and "" is not an identity. China accounts
+        # register against a mobile number and always come back with one.
+        self._api_user_email = api_user_email or None
+
+    def set_api_user_mobile(
+        self,
+        api_user_mobile: str | None,
+    ) -> None:
+        self._api_user_mobile = api_user_mobile or None
 
     def _set_app_id(self) -> None:
         self._app_id = AC_KNOWN_AID
@@ -337,9 +352,14 @@ class AnycubicAuthentication:
         )
 
     def get_mqtt_client_id(self) -> str:
-        if not self.api_user_email:
+        # The client id is an md5 of whatever identifies the account. On the
+        # international service that is the email; a China account registers
+        # against a mobile number and returns `user_email: ""`, which used to
+        # raise here before a socket was ever opened -- so every China MQTT
+        # failure looked like a network or TLS problem and was not one.
+        client_id_string = self._api_user_email or self._api_user_mobile
+        if not client_id_string:
             raise AnycubicMQTTClientError(ErrorsMQTTClient.client_id_missing_email)
-        client_id_string = self.api_user_email
         if self._auth_mode == AnycubicAuthMode.SLICER:
             # Slicer adds 'pcf' to the email before md5 hashing
             client_id_string += "pcf"
