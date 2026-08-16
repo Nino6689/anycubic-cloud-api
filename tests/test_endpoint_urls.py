@@ -200,3 +200,28 @@ class TestFailedConnectIsNotStarted:
             assert ctx.check_hostname is flag
             import ssl as _ssl
             assert ctx.verify_mode is _ssl.CERT_REQUIRED
+
+
+class TestBundledClientCertLoads:
+    """The client certificate Anycubic issued is SHA-1 signed, and OpenSSL 3.x
+    refuses to load it at any security level above 0 -- CA_MD_TOO_WEAK, before
+    a single byte reaches the network. We cannot re-sign it (the issuer is
+    Anycubic's private root; we hold no CA key), so the context lowers the
+    level. This pins that the context we actually build loads the certificate
+    we actually ship, on whatever OpenSSL the test runs against.
+    """
+
+    def test_the_built_context_loads_the_shipped_certificate(self):
+        import ssl
+        from unittest.mock import MagicMock
+
+        import anycubic_cloud_api.api.mqtt as mqtt_mod
+
+        api = mqtt_mod.AnycubicMQTTAPI.__new__(mqtt_mod.AnycubicMQTTAPI)
+        api._log_to_error = MagicMock()
+        api._endpoints = MagicMock()
+        api._endpoints.mqtt_verify_hostname = True
+        # Would raise ssl.SSLError(CA_MD_TOO_WEAK) if the seclevel guard went.
+        ctx = api._mqtt_build_ssl_context()
+        assert isinstance(ctx, ssl.SSLContext)
+        assert ctx.verify_mode is ssl.CERT_REQUIRED
