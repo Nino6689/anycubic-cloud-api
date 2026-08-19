@@ -150,10 +150,9 @@ class TestFailedConnectIsNotStarted:
     """
 
     def test_a_raising_connect_leaves_the_client_cleared(self, monkeypatch):
-        import anycubic_cloud_api.api.mqtt as mqtt_mod
         from unittest.mock import MagicMock
 
-        api = MagicMock()
+        import anycubic_cloud_api.api.mqtt as mqtt_mod
 
         fake = MagicMock()
         fake.connect.side_effect = OSError("tls says no")
