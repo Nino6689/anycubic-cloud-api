@@ -252,8 +252,10 @@ class AnycubicPrinter:
         # None until the printer says so. It used to default to 0, which
         # is indistinguishable from a fan that is genuinely stopped.
         self._fan_speed: int | None = None
-        self._print_speed_pct: int = 0
-        self._print_speed_mode: int = 0
+        # None, not 0, because 0 is a speed mode a printer can actually be in
+        # and "never told us" is a different answer from "mode zero".
+        self._print_speed_pct: int | None = None
+        self._print_speed_mode: int | None = None
         self._local_file_list: list[AnycubicFile] | None = None
         self._udisk_file_list: list[AnycubicFile] | None = None
         # None until the printer has answered the peripherals poll. "No
@@ -1918,6 +1920,28 @@ class AnycubicPrinter:
     @property
     def aux_fan_speed_pct(self) -> int | None:
         return self._aux_fan_speed
+
+    @property
+    def print_speed_pct(self) -> int | None:
+        """The print speed as the PRINTER reports it.
+
+        The same story as the model fan: parsed out of the MQTT settings blob
+        and the local info snapshot since forever, and never exposed, so
+        nothing could read it. Everything asking for a print speed was asking
+        the sliced job instead -- which a printer reached over its own network
+        has none of, so a Kobra X printing happily reported nothing at all.
+        """
+        return self._print_speed_pct
+
+    @property
+    def print_speed_mode(self) -> int | None:
+        """The speed mode the printer says it is in, as its own integer.
+
+        The mode's *name* only ever comes from the cloud, which publishes the
+        list of modes a machine offers. A local connection has no such list,
+        so the number is all there is -- and it is still enough to automate on.
+        """
+        return self._print_speed_mode
 
     @property
     def box_fan_level(self) -> int | None:

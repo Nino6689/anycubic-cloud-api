@@ -137,8 +137,8 @@ class TestInfoReport:
 
         apply(printer, INFO_REPORT)
 
-        assert printer._fan_speed == 0
-        assert printer._print_speed_mode == 2
+        assert printer.fan_speed_pct == 0
+        assert printer.print_speed_mode == 2
 
     def test_the_setpoints_survive_having_no_print_job(self):
         """Target temperatures normally live on the job, which only the cloud
@@ -169,6 +169,23 @@ class TestInfoReport:
         assert printer.fan_speed_pct == 40
         assert printer.aux_fan_speed_pct == 70
         assert printer.box_fan_level == 2
+
+    def test_a_printer_that_has_not_said_reports_nothing(self):
+        """Reported in #19 against a Kobra X in LAN Mode.
+
+        Mode 0 is a mode a printer can genuinely be in, so it cannot double as
+        "never said" -- which is what the old default of 0 made it. A printer
+        whose report omits the field now reads as unknown rather than claiming
+        to be in the first mode.
+        """
+        printer = make_printer()
+        report = deepcopy(INFO_REPORT)
+        del report["data"]["print_speed_mode"]
+
+        apply(printer, report)
+
+        assert printer.print_speed_mode is None
+        assert printer.print_speed_pct is None
 
     def test_a_chamberless_printer_reports_nothing_for_it(self):
         """A Kobra S1 has no chamber sensor and simply omits the fields."""
