@@ -8,6 +8,10 @@ from ..const.enums import (
     AnycubicPrinterMaterialType,
     AnycubicPrintStatus,
 )
+from ..const.error_codes import (
+    PRINTER_OK_CODES,
+    describe_printer_code,
+)
 from ..exceptions.error_strings import (
     ErrorsDataParsing,
     ErrorsGeneral,
@@ -79,6 +83,11 @@ def _drain(consumable: Any) -> dict[str, Any]:
 
 class AnycubicPrinter:
     __slots__ = (
+        # The last code the printer reported that was not "all fine", and the
+        # message that came with it. Kept rather than consumed and dropped:
+        # this is the only place a fault like a filament run-out is named.
+        "_latest_error_code",
+        "_latest_error_message",
         "_camera_stream_url",
         "_file_upload_url",
         "_features",
@@ -246,6 +255,8 @@ class AnycubicPrinter:
         self._set_multi_color_box_fw_version(multi_color_box_fw_version)
         self._set_external_shelves(external_shelves)
         self._axis_position: AnycubicAxisPosition | None = None
+        self._latest_error_code: int | None = None
+        self._latest_error_message: str | None = None
         self._set_multi_color_box(multi_color_box)
 
         self._latest_project: AnycubicProject | None = None
@@ -964,6 +975,50 @@ class AnycubicPrinter:
         else:
             raise AnycubicMQTTUnknownUpdate(ErrorsMQTTUpdate.ota_printer)
 
+    def _record_error_code(
+        self,
+        code: Any,
+        message: Any,
+    ) -> None:
+        """Keep a code that means something is wrong, ignore one that does not."""
+        if not isinstance(code, int) or isinstance(code, bool):
+            return
+
+        if code in PRINTER_OK_CODES:
+            return
+
+        self._latest_error_code = code
+        self._latest_error_message = str(message) if message else None
+
+    def _process_mqtt_update_event(
+        self,
+        action: str,
+        state: str,
+        payload: AnycubicConsumableData,
+    ) -> None:
+        """A printer event -- how a fault announces itself.
+
+        The code itself rides on the envelope and is picked up for every
+        message type, so there is nothing to read out here. What this does is
+        stop the message being unknown: without a branch it raised
+        AnycubicMQTTUnknownUpdate, the whole payload was thrown away, and the
+        only trace was a "Message not understood" line in the debug log --
+        which is exactly where a Kobra X's filament run-out was going (#21).
+
+        The shape of the nested data is not yet known from a real capture, so
+        nothing is claimed about it. Anything in there that is not consumed
+        surfaces through the usual unhandled-data warning, which is how the
+        shape gets learned rather than guessed.
+        """
+        data = payload.get('data')
+
+        if data:
+            data.get('code')
+            data.get('msg')
+            data.get('msgid')
+            data.get('state')
+            data.get('action')
+
     def _process_mqtt_update_axis(
         self,
         action: str,
@@ -1545,6 +1600,25 @@ class AnycubicPrinter:
         state = payload.get('state')
         multi_color_topic = bool('multiColorBox' in topic)
 
+        # Before anything is dispatched, and deliberately.
+        #
+        # Every message carries a result code, and in normal running it is 200
+        # -- "processed", not a fault. It used to be read at the end of this
+        # method purely to empty the payload, then dropped, so a printer
+        # announcing a real problem was the one thing nothing kept.
+        #
+        # Reading it here rather than at the end matters: a handler that
+        # cannot parse its message raises, and everything after the dispatch
+        # never runs. A fault is exactly when an unfamiliar payload turns up,
+        # so recording afterwards would lose the codes that matter most.
+        #
+        # Peeked from the remaining data instead of consumed, so the normal
+        # consumption at the end of dispatch is left to work as it always has.
+        self._record_error_code(
+            payload.remaining_data.get('code'),
+            payload.remaining_data.get('msg'),
+        )
+
         if msg_type == 'lastWill':
             self._process_mqtt_update_lastwill(action, state, payload)
 
@@ -1595,6 +1669,9 @@ class AnycubicPrinter:
         elif msg_type == 'aiSettings':
             self._process_mqtt_update_ai_settings(action, state, payload)
 
+        elif msg_type in ('event', 'printerevent', 'printer_event'):
+            self._process_mqtt_update_event(action, state, payload)
+
         else:
             raise AnycubicMQTTUnknownUpdate(ErrorsMQTTUpdate.unknown.format(msg_type))
 
@@ -1634,6 +1711,24 @@ class AnycubicPrinter:
     @property
     def machine_name(self) -> str:
         return self._machine_name
+
+    @property
+    def latest_error_code(self) -> int | None:
+        """The last code the printer reported that was not "all fine"."""
+        return self._latest_error_code
+
+    @property
+    def latest_error_message(self) -> str | None:
+        """Whatever the printer said alongside that code, if anything."""
+        return self._latest_error_message
+
+    @property
+    def latest_error_description(self) -> str | None:
+        """Anycubic's own wording for the last error, or the bare number."""
+        if self._latest_error_code is None:
+            return None
+
+        return describe_printer_code(self._latest_error_code)
 
     @property
     def machine_img(self) -> str | None:
