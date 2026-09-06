@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..exceptions.error_strings import ErrorsDataParsing
+from ..helpers.helpers import as_int, as_int_list, as_str
 from ..exceptions.exceptions import AnycubicDataParsingError
 
 
@@ -27,13 +28,13 @@ class AnycubicMaterialMapping:
         color_blue: int,
         paint_index: int = 0,
     ) -> None:
-        self._spool_index = int(spool_index)
+        self._spool_index = as_int(spool_index, -1)
         self._filament_used = float(filament_used)
-        self._material_type = str(material_type)
-        self._color_red = int(color_red)
-        self._color_green = int(color_green)
-        self._color_blue = int(color_blue)
-        self._paint_index = int(paint_index)
+        self._material_type = as_str(material_type)
+        self._color_red = as_int(color_red)
+        self._color_green = as_int(color_green)
+        self._color_blue = as_int(color_blue)
+        self._paint_index = as_int(paint_index, -1)
 
     @property
     def spool_index(self) -> int:
@@ -207,19 +208,22 @@ class AnycubicMachineToolInfo:
         status: int,
         show_place: int,
     ) -> None:
-        self._id = int(id)
-        self._typd_id = int(typd_id)
-        self._model_id = int(model_id)
-        self._type_function_id = int(type_function_id)
-        self._parent_id = int(parent_id)
-        self._function_name = str(function_name)
-        self._function_des = str(function_des)
-        self._control = int(control)
+        # Descriptive data about what the machine can do. Thirteen fields
+        # read straight out of the cloud's dict, any one of which arriving
+        # null used to raise and cost the caller the whole printer.
+        self._id = as_int(id, -1)
+        self._typd_id = as_int(typd_id, -1)
+        self._model_id = as_int(model_id, -1)
+        self._type_function_id = as_int(type_function_id, -1)
+        self._parent_id = as_int(parent_id, -1)
+        self._function_name = as_str(function_name)
+        self._function_des = as_str(function_des)
+        self._control = as_int(control)
         self._param = param
-        self._icon_url = str(icon_url)
-        self._function_type = int(function_type)
-        self._status = int(status)
-        self._show_place = int(show_place)
+        self._icon_url = as_str(icon_url)
+        self._function_type = as_int(function_type)
+        self._status = as_int(status)
+        self._show_place = as_int(show_place)
 
     @classmethod
     def from_json(cls, data: dict[str, Any] | None) -> AnycubicMachineToolInfo | None:
@@ -271,14 +275,18 @@ class AnycubicMachineExternalShelves:
         status_type: int,
         current_status: int,
     ) -> None:
-        self._id = int(id)
-        self._type = str(type)
-        self._color = list([
-            int(x) for x in color
-        ])
-        self._loaded = int(loaded)
-        self._status_type = int(status_type)
-        self._current_status = int(current_status)
+        # Every one of these is coerced defensively. Firmware 2.0.1.9 began
+        # sending this object with `id` and `loaded` null, and the bare
+        # int() calls that used to be here raised TypeError -- which failed
+        # the whole printer's parse and left the entry in setup_retry with
+        # every entity unavailable (#28). The holder is an accessory; not
+        # knowing its id is not a reason to lose the printer.
+        self._id = as_int(id, -1)
+        self._type = as_str(type)
+        self._color = as_int_list(color)
+        self._loaded = as_int(loaded)
+        self._status_type = as_int(status_type)
+        self._current_status = as_int(current_status)
 
     @classmethod
     def from_json(cls, data: dict[str, Any] | None) -> AnycubicMachineExternalShelves | None:
@@ -298,14 +306,18 @@ class AnycubicMachineExternalShelves:
         if data is None:
             return None
 
-        self._type = data['type']
-        self._color = data['color']
-        self._loaded = data['loaded']
-        self._status_type = data['status_type']
-        self._current_status = data['current_status']
+        # Coerced exactly as the constructor does. This path wrote whatever
+        # arrived straight onto the slots, so a null over MQTT produced an
+        # object whose own properties then raised on read instead.
+        self._type = as_str(data.get('type'))
+        self._color = as_int_list(data.get('color'))
+        self._loaded = as_int(data.get('loaded'))
+        self._status_type = as_int(data.get('status_type'))
+        self._current_status = as_int(data.get('current_status'))
 
     @property
     def id(self) -> int:
+        """The holder's id, or -1 when the printer did not name one."""
         return self._id
 
     @property
@@ -400,10 +412,10 @@ class AnycubicFeedStatus:
         current_status: int,
         slot_index: int,
     ) -> None:
-        self._code = int(code)
-        self._type = int(type)
-        self._current_status = int(current_status)
-        self._slot_index = int(slot_index)
+        self._code = as_int(code, -1)
+        self._type = as_int(type)
+        self._current_status = as_int(current_status)
+        self._slot_index = as_int(slot_index, -1)
 
     @classmethod
     def from_json(cls, data: dict[str, Any] | None) -> AnycubicFeedStatus | None:
@@ -449,10 +461,10 @@ class AnycubicDryingStatus:
         duration: int,
         remain_time: int,
     ) -> None:
-        self._status = int(status)
-        self._target_temp = int(target_temp)
-        self._duration = int(duration)
-        self._remain_time = int(remain_time)
+        self._status = as_int(status)
+        self._target_temp = as_int(target_temp)
+        self._duration = as_int(duration)
+        self._remain_time = as_int(remain_time)
 
     @classmethod
     def from_json(cls, data: dict[str, Any] | None) -> AnycubicDryingStatus | None:
@@ -691,11 +703,14 @@ class AnycubicMultiColorBox:
         slots: list[dict[str, Any]],
         humidity: float | None = None,
     ) -> None:
+        # `id` keeps raising on purpose: it is the ACE's identity and the
+        # printer dict is keyed by it, so a box with no id cannot be placed.
+        # Everything after it is telemetry and must not be able to sink the box.
         self._id: int = int(id)
-        self._status: int = int(status)
-        self._model_id: int = int(model_id)
-        self._auto_feed: int = int(auto_feed)
-        self._loaded_slot: int = int(loaded_slot)
+        self._status: int = as_int(status)
+        self._model_id: int = as_int(model_id)
+        self._auto_feed: int = as_int(auto_feed)
+        self._loaded_slot: int = as_int(loaded_slot, -1)
         self.set_feed_status(feed_status)
         self.set_current_temperature(temp)
         self._humidity: float | None = (
@@ -712,7 +727,7 @@ class AnycubicMultiColorBox:
                 raise AnycubicDataParsingError(ErrorsDataParsing.ace.format(slots))
 
     def set_auto_feed(self, auto_feed: int) -> None:
-        self._auto_feed = int(auto_feed)
+        self._auto_feed = as_int(auto_feed)
 
     def set_drying_status(self, drying_status: dict[str, Any] | None) -> None:
         self._drying_status = AnycubicDryingStatus.from_json(drying_status)
@@ -721,10 +736,12 @@ class AnycubicMultiColorBox:
         self._feed_status = AnycubicFeedStatus.from_json(feed_status)
 
     def set_slot_loaded(self, slot_num: int) -> None:
-        self._loaded_slot = slot_num
+        self._loaded_slot = as_int(slot_num, -1)
 
     def set_current_temperature(self, temp: int) -> None:
-        self._temp = int(temp)
+        # Reached from the constructor as well as from MQTT, so a null
+        # temperature took the whole box down and not merely the reading.
+        self._temp = as_int(temp)
 
     def update_slots_with_mqtt_data(self, slot_list: list[dict[str, Any]] | None) -> None:
         if slot_list is None:

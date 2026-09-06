@@ -1127,7 +1127,10 @@ class AnycubicPrinter:
         state: str,
         payload: AnycubicConsumableData,
     ) -> None:
-        project_id = payload.get('data', {}).get('taskid', -1)
+        # `or {}` rather than a plain default: a present-but-null `data`
+        # hands back None from .get and the chained .get then raises
+        # AttributeError. Same trap as the null coercions, different shape.
+        project_id = (payload.get('data') or {}).get('taskid', -1)
         if action == 'start' and state == 'printing':
             data = payload['data']
             self._is_printing = 2

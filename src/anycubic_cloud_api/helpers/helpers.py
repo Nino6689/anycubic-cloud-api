@@ -17,6 +17,59 @@ REX_GCODE_DATA_KEY_VALUE: re.Pattern[Any] = re.compile(r'; ([a-zA-Z0-9_\[\] ]+) 
 REX_PRINT_TOTAL_TIME: re.Pattern[Any] = re.compile(r'^([\d]+)hour([\d]+)min$')
 
 
+def as_int(value: Any, default: int = 0) -> int:
+    """A whole number out of whatever the cloud sent, or `default`.
+
+    Anycubic adds fields and nulls them without warning: firmware 2.0.1.9
+    began sending `external_shelves` with `id` and `loaded` set to null, and
+    `int(None)` raised, which failed the parse of the whole printer and left
+    every entity unavailable behind a config entry stuck in setup_retry.
+
+    Note that `data.get("key", 0)` does NOT protect against this. The default
+    only applies when the key is ABSENT; a key that is present and null hands
+    back None and raises anyway. That is precisely how the above shipped.
+
+    A single unreadable telemetry field is never worth losing the printer
+    over, so this returns the stated fallback rather than raising.
+    """
+    if isinstance(value, bool):
+        # bool is an int subclass, so int(True) is 1 either way -- spelled out
+        # so the behaviour is a decision rather than an accident.
+        return int(value)
+
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def as_str(value: Any, default: str = "") -> str:
+    """Text out of whatever the cloud sent. `None` becomes `default`, not "None"."""
+    if value is None:
+        return default
+
+    return str(value)
+
+
+def as_int_list(value: Any) -> list[int]:
+    """A list of whole numbers, dropping anything that is not one.
+
+    Colours arrive here. A null list, or a list with a null in it, used to
+    raise from inside the comprehension and take the printer down with it.
+    """
+    if not isinstance(value, (list, tuple)):
+        return []
+
+    numbers: list[int] = []
+    for item in value:
+        try:
+            numbers.append(int(item))
+        except (TypeError, ValueError):
+            continue
+
+    return numbers
+
+
 def timedelta_to_total_minutes(
     delta: timedelta,
 ) -> float:
