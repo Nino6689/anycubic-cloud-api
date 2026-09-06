@@ -264,19 +264,19 @@ class AnycubicMachineExternalShelves:
 
     def __init__(
         self,
-        id: int,
+        id: int | None,
         type: str,
         color: list[int],
-        loaded: int,
+        loaded: int | None,
         status_type: int,
         current_status: int,
     ) -> None:
-        self._id = int(id)
+        self._id = int(id) if id is not None else None
         self._type = str(type)
         self._color = list([
             int(x) for x in color
         ])
-        self._loaded = int(loaded)
+        self._loaded = int(loaded) if loaded is not None else None
         self._status_type = int(status_type)
         self._current_status = int(current_status)
 
