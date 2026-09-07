@@ -293,6 +293,29 @@ class AnycubicMachineExternalShelves:
         if data is None:
             return None
 
+        # An external shelf is a distinct accessory from the ACE, and firmware
+        # 2.0.1.9 reports the field whether or not one is attached -- entirely
+        # null when it is not. Reported by the owner of the printer in #28,
+        # who had an ACE 2 Pro represented perfectly well elsewhere in the
+        # same payload and no shelf at all.
+        #
+        # Tolerating those nulls stopped the crash but would then have built a
+        # holder that does not exist, so `external_spool_loaded` would state
+        # flatly that nothing is loaded in a thing nobody owns. Absent is not
+        # empty, and an entity that is confidently wrong is worse than one
+        # that admits it does not know.
+        #
+        # Deliberately conservative: any one of an id, a material or a loaded
+        # flag is enough to accept it, because no real shelf's payload has
+        # been seen yet and a shelf that reports only some of them must still
+        # come through.
+        if (
+            data.get('id') is None
+            and not data.get('type')
+            and data.get('loaded') is None
+        ):
+            return None
+
         return cls(
             id=data['id'],
             type=data['type'],
