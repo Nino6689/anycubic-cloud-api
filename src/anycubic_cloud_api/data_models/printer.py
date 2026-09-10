@@ -2366,6 +2366,29 @@ class AnycubicPrinter:
         return None
 
     @property
+    def secondary_multi_color_box_loaded_slot(self) -> int | None:
+        """Which slot is feeding on the second ACE, or None.
+
+        Mirrors primary_multi_color_box_loaded_slot. A printer with two boxes
+        reported this all along -- it was parsed and then had no accessor, so
+        the only way to know which slot the second unit was feeding from was
+        to not know (hass-anycubic #33).
+        """
+        box = self.secondary_multi_color_box
+
+        if not box:
+            return None
+
+        slot = box.loaded_slot
+
+        # -1 means nothing is loaded; surface that as unknown rather than a
+        # slot number that doesn't exist.
+        if slot is not None and slot >= 0:
+            return slot
+
+        return None
+
+    @property
     def secondary_multi_color_box_current_temperature(self) -> int:
         if self.secondary_multi_color_box:
             return self.secondary_multi_color_box.current_temperature
