@@ -683,14 +683,17 @@ class AnycubicProject:
 
     def update_with_mqtt_print_status_data(
         self,
-        print_status: AnycubicPrintStatus,
+        # None when the printer sent a status that is not one: the job keeps
+        # the status it had, and everything else in the report still applies.
+        print_status: AnycubicPrintStatus | None,
         # Only read from, by key -- so a plain report dict off the wire is as
         # good as the wrapped form, and both reach here.
         mqtt_data: Mapping[str, Any] | None = None,
         paused: int | None = None,
         reason: str | None = None,
     ) -> None:
-        self._print_status = int(print_status)
+        if print_status is not None:
+            self._print_status = int(print_status)
 
         if paused is not None:
             self._set_pause(paused)

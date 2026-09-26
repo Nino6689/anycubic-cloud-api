@@ -480,8 +480,19 @@ class AnycubicPrinter:
         if self._latest_project is None:
             return
 
+        # A Kobra X sends print_status 0 mid-print, and 0 is not a status.
+        # Raising on it threw away the whole info report -- temperatures,
+        # progress, layers -- 20 times in two minutes (#38). An unrecognised
+        # status now leaves the job's status as it was and applies the rest.
+        try:
+            print_status: AnycubicPrintStatus | None = AnycubicPrintStatus(
+                int(data.get('print_status'))  # type: ignore[arg-type]
+            )
+        except (TypeError, ValueError):
+            print_status = None
+
         self._latest_project.update_with_mqtt_print_status_data(
-            AnycubicPrintStatus(int(data.get('print_status') or 0)),
+            print_status,
             data,
             paused=data.get('pause'),
         )
@@ -1027,13 +1038,16 @@ class AnycubicPrinter:
     ) -> None:
         if action == 'query' and state == 'done':
             data = payload['data']
-            coords = data['coordinates']
+            # A Kobra X answers the query without coordinates at all during a
+            # print. No reading is better than a raise that loses the report.
+            coords = data.get('coordinates')
 
-            self._axis_position = AnycubicAxisPosition(
-                x=coords['x'],
-                y=coords['y'],
-                z=coords['z'],
-            )
+            if coords:
+                self._axis_position = AnycubicAxisPosition(
+                    x=coords['x'],
+                    y=coords['y'],
+                    z=coords['z'],
+                )
 
             # Nested payloads are only released once emptied, and anything left
             # behind raises AnycubicMQTTUnhandledData at the end of dispatch.

@@ -678,6 +678,7 @@ class TestTheRunningJob:
         assert printer.latest_project_print_in_progress is True
         assert printer.latest_project_print_is_paused is False
 
+
     def test_a_paused_job_reads_as_paused(self):
         printer = make_printer()
 
@@ -775,3 +776,32 @@ class TestTheFinishedJobBlock:
         apply(printer, self._report())
 
         assert printer.latest_project is None
+
+
+class TestAStatusThatIsNotOne:
+    """A Kobra X reports print_status 0 mid-print, which is not a status.
+
+    Raising on it discarded the whole info report -- temperatures, progress,
+    layers -- 20 times in two minutes (#38).
+    """
+
+    @pytest.mark.parametrize("status", [0, None, 8])
+    def test_the_rest_of_the_report_still_applies(self, status):
+        printer = make_printer()
+        job = deepcopy(LAN_JOB)
+        job["print_status"] = status
+        job["progress"] = 75
+
+        apply(printer, info_with_job(job))
+
+        assert printer.latest_project_progress_percentage == 75
+
+    def test_the_status_already_known_is_kept(self):
+        printer = make_printer()
+        apply(printer, info_with_job(LAN_JOB))
+        job = deepcopy(LAN_JOB)
+        job["print_status"] = 0
+
+        apply(printer, info_with_job(job))
+
+        assert printer.latest_project_print_in_progress is True

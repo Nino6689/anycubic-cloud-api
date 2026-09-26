@@ -68,6 +68,15 @@ class TestMqttDispatch:
 
         assert payload.is_empty, f"left behind: {payload.remaining_data}"
 
+    def test_a_reply_without_coordinates_is_harmless(self):
+        """A Kobra X answers the query with no coordinates mid-print (#38)."""
+        printer = self._printer()
+        payload = self._msg(data={})
+
+        printer.process_mqtt_update("a/b/c/d/e/f/g/axis/report", payload)
+
+        assert printer.axis_position is None
+
     def test_an_unexpected_action_is_reported(self):
         from anycubic_cloud_api import AnycubicMQTTUnknownUpdate
 
