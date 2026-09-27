@@ -71,3 +71,41 @@ class TestTheSecondBoxCanNameItsLoadedSlot:
 
     def test_no_ace_at_all_is_not_an_error(self):
         assert _printer().secondary_multi_color_box_loaded_slot is None
+
+
+class TestStoppingTheDryer:
+    """hass-anycubic #39: stopping the second ACE's dryer did nothing.
+
+    The stop order named no box, and the sender numbers unnamed boxes by
+    position, so every single-box stop went to box 0.
+    """
+
+    async def _sent_boxes(self, **kwargs):
+        from unittest.mock import AsyncMock
+
+        from anycubic_cloud_api.anycubic_api import AnycubicAPI
+
+        api = AnycubicAPI(session=MagicMock(), cookie_jar=MagicMock())
+        api._send_anycubic_order = AsyncMock(return_value="msgid")
+        printer = _printer(_box(0), _box(1))
+
+        await api.multi_color_box_drying_stop(printer, **kwargs)
+
+        order = api._send_anycubic_order.await_args.kwargs["order_request"]
+        return order.order_data["multi_color_box"]
+
+    async def test_the_second_box_is_the_one_stopped(self):
+        boxes = await self._sent_boxes(box_id=1)
+
+        assert [box["id"] for box in boxes] == [1]
+        assert boxes[0]["drying_status"]["status"] == 0
+
+    async def test_the_first_box_is_still_stopped_by_name(self):
+        boxes = await self._sent_boxes(box_id=0)
+
+        assert [box["id"] for box in boxes] == [0]
+
+    async def test_no_box_named_stops_every_box(self):
+        boxes = await self._sent_boxes()
+
+        assert [box["id"] for box in boxes] == [0, 1]

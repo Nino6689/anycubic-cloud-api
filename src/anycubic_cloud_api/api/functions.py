@@ -1807,8 +1807,12 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
             return None
 
         if box_id >= 0:
+            # The box has to be named: the sender numbers unnamed boxes by
+            # position, so a lone {'status': 0} always stopped box 0 and a
+            # second ACE could never be stopped from here (#39).
             order_params: list[dict[str, Any]] | dict[str, Any] = {
                 'status': 0,
+                'box_id': box_id,
             }
         else:
             order_params = [
