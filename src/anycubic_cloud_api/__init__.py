@@ -19,6 +19,7 @@ from .data_models.project import AnycubicProject
 from .exceptions.exceptions import (
     AnycubicAPIError,
     AnycubicAPIParsingError,
+    AnycubicRateLimitError,
     AnycubicAuthError,
     AnycubicAuthTokensExpired,
     AnycubicCloudUploadError,
@@ -40,6 +41,7 @@ __all__ = [
     "AnycubicAPI",
     "AnycubicAPIError",
     "AnycubicAPIParsingError",
+    "AnycubicRateLimitError",
     "AnycubicAuthError",
     "AnycubicAuthMode",
     "AnycubicAuthTokensExpired",

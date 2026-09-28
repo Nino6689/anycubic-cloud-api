@@ -41,6 +41,12 @@ WARN_INTERVAL_API_DURATION = 60 * 10
 
 ACCESS_TOKEN_LOGIN_RETRIES = 2
 ACCESS_TOKEN_LOGIN_RETRY_INTERVAL = 2
+# The token exchange is rate-limited: a second exchange within ~3 s of a
+# successful one is refused with this message (measured 2026-09-28). It is not
+# a login failure, so it is retried after a cooldown and never treated as one.
+ACCESS_TOKEN_RATE_LIMIT_MARKERS = ("请求过于频繁", "too frequent")
+ACCESS_TOKEN_RATE_LIMIT_RETRIES = 3
+ACCESS_TOKEN_RATE_LIMIT_WAIT = 6
 
 
 class AnycubicServerMessage:

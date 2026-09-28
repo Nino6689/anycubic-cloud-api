@@ -13,6 +13,9 @@ from ..const.api_endpoints import API_ENDPOINT
 from ..const.const import (
     ACCESS_TOKEN_LOGIN_RETRIES,
     ACCESS_TOKEN_LOGIN_RETRY_INTERVAL,
+    ACCESS_TOKEN_RATE_LIMIT_MARKERS,
+    ACCESS_TOKEN_RATE_LIMIT_RETRIES,
+    ACCESS_TOKEN_RATE_LIMIT_WAIT,
     DEFAULT_USER_AGENT,
     MAX_API_FETCH_TIME_WARN,
     WARN_INTERVAL_API_DURATION,
@@ -32,6 +35,7 @@ from ..exceptions.exceptions import (
     AnycubicAPIParsingError,
     AnycubicAuthError,
     AnycubicAuthTokensExpired,
+    AnycubicRateLimitError,
 )
 from ..models.auth import AnycubicAuthentication, AnycubicAuthMode
 from ..models.http import HTTP_METHODS, AnycubicAPIEndpoint
@@ -346,12 +350,23 @@ class AnycubicAPIBase:
 
     async def _get_user_token_with_access_token_with_retry(self) -> None:
         retries = ACCESS_TOKEN_LOGIN_RETRIES
-        for x in range(retries):
+        rate_limit_waits = ACCESS_TOKEN_RATE_LIMIT_RETRIES
+        x = 0
+        while True:
             try:
                 await self._get_user_token_with_access_token()
                 return
+            except AnycubicRateLimitError:
+                # Not a refusal: wait out the cooldown. If it persists the
+                # error propagates as transient, never as an auth failure, so
+                # it can neither trigger the web fallback nor a re-auth.
+                if rate_limit_waits <= 0:
+                    raise
+                rate_limit_waits -= 1
+                await asyncio.sleep(ACCESS_TOKEN_RATE_LIMIT_WAIT)
             except AnycubicAuthError:
-                if x < retries - 1:
+                x += 1
+                if x < retries:
                     await asyncio.sleep(ACCESS_TOKEN_LOGIN_RETRY_INTERVAL)
                 else:
                     raise
@@ -366,6 +381,12 @@ class AnycubicAPIBase:
         )
         if not resp or not resp['data']:
             server_message = resp.get('msg') if resp else None
+            if server_message and any(
+                marker in str(server_message) for marker in ACCESS_TOKEN_RATE_LIMIT_MARKERS
+            ):
+                error_message = ErrorsAuth.access_token_rate_limited.format(server_message)
+                self._log_to_debug(error_message)
+                raise AnycubicRateLimitError(error_message)
             error_message = ErrorsAuth.access_token_login_failed.format(server_message)
             self._log_to_debug(error_message)
             raise AnycubicAuthError(error_message)
