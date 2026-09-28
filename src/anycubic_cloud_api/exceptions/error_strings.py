@@ -194,6 +194,9 @@ class ErrorsAuth:
     access_token_login_failed = str(
         "Failed to login with access_token, server message: {0}"
     )
+    access_token_rate_limited = str(
+        "Anycubic rate-limited the access_token login, server message: {0}"
+    )
 
 
 class ErrorsAuthTokenExpired:

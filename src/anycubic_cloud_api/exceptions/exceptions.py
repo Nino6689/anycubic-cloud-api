@@ -15,6 +15,10 @@ class AnycubicAPIParsingError(AnycubicAPIError):
     pass
 
 
+class AnycubicRateLimitError(AnycubicAPIParsingError):
+    """The cloud asked us to slow down. Transient, never an auth failure."""
+
+
 class AnycubicFileNotFoundError(AnycubicAPIError):
     pass
 
