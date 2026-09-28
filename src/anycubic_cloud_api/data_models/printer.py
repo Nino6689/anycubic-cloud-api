@@ -150,6 +150,7 @@ class AnycubicPrinter:
         "_axis_position",
         "_multi_color_box",
         "_latest_project",
+        "_lan_last_job",
         "_fan_speed",
         "_aux_fan_speed",
         "_box_fan_level",
@@ -260,6 +261,11 @@ class AnycubicPrinter:
         self._set_multi_color_box(multi_color_box)
 
         self._latest_project: AnycubicProject | None = None
+        # The printer's own record of the job that finished last, from the
+        # local info report. Kept because the running job is cleared the moment
+        # the printer goes idle, and without this a finished LAN print could
+        # never be charged to its spool (hass-anycubic G1).
+        self._lan_last_job: dict[str, Any] | None = None
         # None until the printer says so. It used to default to 0, which
         # is indistinguishable from a fan that is genuinely stopped.
         self._fan_speed: int | None = None
@@ -444,6 +450,36 @@ class AnycubicPrinter:
             return
 
         self._parameter.update_current_temps(hotbed, nozzle)
+
+    def _set_lan_last_job(self, data: dict[str, Any]) -> None:
+        if not data:
+            return
+
+        def as_int(value: Any) -> int | None:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+
+        def as_float(value: Any) -> float | None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        self._lan_last_job = {
+            'task_id': as_int(data.get('task_id')),
+            # Millimetres of filament the printer says it extruded.
+            'supplies_usage_mm': as_float(data.get('supplies_usage')),
+            'print_status': as_int(data.get('print_status')),
+            'state': data.get('state') if isinstance(data.get('state'), str) else None,
+            'filename': data.get('filename') if isinstance(data.get('filename'), str) else None,
+        }
+
+    @property
+    def lan_last_job(self) -> dict[str, Any] | None:
+        """The last finished job as the printer reported it locally, if any."""
+        return self._lan_last_job
 
     def _apply_lan_project(self, project: Any) -> None:
         """Track the running job from the printer's own report of it.
@@ -1513,9 +1549,9 @@ class AnycubicPrinter:
         data.get('model')
         self._apply_lan_project(data.get('project'))
 
-        # Whatever ran before this one. Nothing reads it yet, and the printer
-        # sends null for it far more often than not.
-        _drain(data.get('last_project'))
+        # The job that finished last. Null until one has, and then it stays --
+        # so a null here never clears what is already known.
+        self._set_lan_last_job(_drain(data.get('last_project')))
         _drain(data)
 
     def _process_mqtt_update_ai_settings(

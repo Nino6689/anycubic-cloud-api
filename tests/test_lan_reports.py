@@ -805,3 +805,52 @@ class TestAStatusThatIsNotOne:
         apply(printer, info_with_job(job))
 
         assert printer.latest_project_print_in_progress is True
+
+
+class TestTheLastFinishedJob:
+    """hass-anycubic G1: over LAN the running job is cleared as soon as the
+    printer goes idle, so the finished job is only ever in `last_project`."""
+
+    FINISHED = {
+        "task_id": 119231778,
+        "filename": ".3mf_temp/0622-1002-Spectacular Wolt (1)_plate(01)_PLA_0.2_45s.gcode",
+        "progress": 100, "curr_layer": 5, "total_layers": 5, "print_time": 2,
+        "remain_time": 0, "supplies_usage": 65, "pause": 0, "state": "finished",
+        "print_status": 2, "print_speed_mode": 2, "project_type": 2,
+        "localtask": "aff63521-084c-4dfc-9cf7-d112c7159551",
+    }
+
+    def _idle_with_last(self, last):
+        report = info_with_job(None)
+        report["data"]["last_project"] = deepcopy(last)
+        return report
+
+    def test_it_is_kept(self):
+        printer = make_printer()
+        apply(printer, self._idle_with_last(self.FINISHED))
+
+        job = printer.lan_last_job
+        assert job["task_id"] == 119231778
+        assert job["supplies_usage_mm"] == 65.0
+        assert job["print_status"] == 2
+        assert job["state"] == "finished"
+
+    def test_a_later_null_does_not_forget_it(self):
+        printer = make_printer()
+        apply(printer, self._idle_with_last(self.FINISHED))
+        apply(printer, self._idle_with_last(None))
+
+        assert printer.lan_last_job["task_id"] == 119231778
+
+    def test_nothing_before_the_first_finish(self):
+        printer = make_printer()
+        apply(printer, info_with_job(None))
+
+        assert printer.lan_last_job is None
+
+    def test_the_report_is_still_fully_consumed(self):
+        printer = make_printer()
+        report = AnycubicConsumableData(self._idle_with_last(self.FINISHED))
+        printer.process_mqtt_update("a/b/c/d/e/f/g/info/report", report)
+
+        assert report.is_empty, report.remaining_data
