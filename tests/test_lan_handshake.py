@@ -227,6 +227,38 @@ class TestHandshake:
         assert (await handshake.async_authenticate()).port == 9883
 
     @pytest.mark.asyncio
+    async def test_a_broker_address_without_a_scheme_is_accepted(self):
+        """A Photon P1 Max reports a bare host and port."""
+        payload = {**BROKER_PAYLOAD, "broker": "10.0.66.28:8883"}
+        handshake = make_handshake([INFO_DOCUMENT, control_response(payload)])
+
+        broker = await handshake.async_authenticate()
+
+        assert (broker.host, broker.port) == ("10.0.66.28", 8883)
+
+    @pytest.mark.asyncio
+    async def test_the_client_id_the_printer_names_is_kept(self):
+        payload = {**BROKER_PAYLOAD, "clientId": "ab12cd34"}
+        handshake = make_handshake([INFO_DOCUMENT, control_response(payload)])
+
+        assert (await handshake.async_authenticate()).client_id == "ab12cd34"
+
+    @pytest.mark.asyncio
+    async def test_no_client_id_is_invented_when_the_printer_names_none(self):
+        handshake = make_handshake([INFO_DOCUMENT, control_response()])
+
+        assert (await handshake.async_authenticate()).client_id is None
+
+    @pytest.mark.asyncio
+    async def test_the_mac_is_read_from_the_credentials_when_the_urn_is_absent(self):
+        """Resin printers send no usn; the MAC arrives with the credentials."""
+        info = {key: value for key, value in INFO_DOCUMENT.items() if key != "usn"}
+        payload = {**BROKER_PAYLOAD, "mac": "a4:e8:8d:80:54:c8"}
+        handshake = make_handshake([info, control_response(payload)])
+
+        assert (await handshake.async_authenticate()).mac == "A4-E8-8D-80-54-C8"
+
+    @pytest.mark.asyncio
     async def test_an_unparseable_broker_url_raises(self):
         payload = {**BROKER_PAYLOAD, "broker": "://nonsense"}
         handshake = make_handshake([INFO_DOCUMENT, control_response(payload)])
