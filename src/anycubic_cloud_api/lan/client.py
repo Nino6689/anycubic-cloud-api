@@ -93,6 +93,7 @@ class AnycubicLANClient:
         "_on_message",
         "_debug_logger",
         "_loop",
+        "_narrow_subscription",
     )
 
     def __init__(
@@ -108,6 +109,7 @@ class AnycubicLANClient:
         self._connected: asyncio.Event | None = None
         self._disconnected: asyncio.Event | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._narrow_subscription = False
 
     @property
     def is_connected(self) -> bool:
@@ -157,6 +159,7 @@ class AnycubicLANClient:
             self._log_to_debug(f"Anycubic LAN MQTT refused the connection: rc={rc}")
             return
 
+        self._narrow_subscription = False
         client.subscribe(f"{self.report_topic}/#")
         self._log_to_debug("Anycubic LAN MQTT connected and subscribed")
 
@@ -167,6 +170,14 @@ class AnycubicLANClient:
         mid: int,
         granted_qos: tuple[int],
     ) -> None:
+        # A Photon P1 Max refuses the multi-level wildcard but grants the
+        # report topics one level down, which is everything it publishes.
+        if any(qos >= 0x80 for qos in granted_qos) and not self._narrow_subscription:
+            self._narrow_subscription = True
+            client.subscribe(f"{self.report_topic}/+/report")
+            self._log_to_debug("Anycubic LAN MQTT wildcard refused, narrowing")
+            return
+
         # Only once the subscription is live is the connection actually usable
         # -- publishing before this point succeeds but the replies are lost.
         if self._connected is not None and self._loop is not None:
@@ -217,7 +228,9 @@ class AnycubicLANClient:
         self._connected = asyncio.Event()
         self._disconnected = asyncio.Event()
 
-        client_id = f"ha-{uuid.uuid4().hex[:12]}"
+        # Use the id the printer handed out if it did -- a Photon P1 Max
+        # answers anything else with "not authorized".
+        client_id = self._broker.client_id or f"ha-{uuid.uuid4().hex[:12]}"
 
         client = (
             mqtt_client.Client(_MQTT_CALLBACK_API_VERSION, client_id)
@@ -285,7 +298,7 @@ class AnycubicLANClient:
         """Tell the printer to do something, and say which message said so.
 
         The envelope is the slicer's, field for field: a millisecond timestamp
-        and a message id alongside the payload. Queries have always worked
+        and a message id alongside the payload. The Kobras answer a query
         without either, but a command is not a query, and the shape that is
         known to drive hardware is the one worth sending.
 
@@ -312,7 +325,9 @@ class AnycubicLANClient:
         """Ask the printer to report one kind of state."""
         action = LAN_QUERY_ACTIONS.get(message_type, "query")
 
-        self.publish(message_type, {"type": message_type, "action": action, "data": {}})
+        # Sent in the same envelope as a command. The Kobras answer a bare
+        # query; a Photon P1 Max ignores one without a timestamp and msgid.
+        self.publish_command(message_type, action, {})
 
     def query_all(self) -> None:
         """Ask for everything the printer will report."""

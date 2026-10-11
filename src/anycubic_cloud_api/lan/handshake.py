@@ -66,8 +66,11 @@ from ..exceptions.exceptions import (
 )
 
 # "mqtts://192.168.1.50:9883" -- the scheme is always TLS in practice, but the
-# port is taken from the URL rather than assumed.
-_BROKER_URL_PATTERN = re.compile(r"^mqtts?://(?P<host>[^:/]+)(?::(?P<port>\d+))?")
+# port is taken from the URL rather than assumed. The scheme is optional: a
+# Photon P1 Max reports a bare "192.168.1.50:8883".
+_BROKER_URL_PATTERN = re.compile(
+    r"^(?:mqtts?://)?(?P<host>[^:/]+)(?::(?P<port>\d+))?"
+)
 
 # The discovery document reports the MAC inside a URN, e.g.
 # "uuid:fdm:AA-BB-CC-DD-EE-FF".
@@ -91,6 +94,9 @@ class AnycubicLANBroker:
     mac: str | None = None
     model_name: str | None = None
     device_type: str | None = None
+    # Some printers name the MQTT client id they will accept and refuse any
+    # other. None means the printer did not ask for one.
+    client_id: str | None = None
 
     def __repr__(self) -> str:
         """Redact the credentials -- this ends up in debug logs and issues."""
@@ -285,9 +291,15 @@ class AnycubicLANHandshake:
             device_id=str(broker_info["deviceId"]),
             model_id=str(info["modelId"]),
             serial=info.get("cn") or None,
-            mac=_extract_mac(info.get("usn")),
+            # Resin printers leave the URN out of the discovery document and
+            # report the MAC alongside the credentials instead.
+            mac=(
+                _extract_mac(info.get("usn"))
+                or _extract_mac(broker_info.get("mac"))
+            ),
             model_name=info.get("modelName") or None,
             device_type=info.get("deviceType") or None,
+            client_id=str(broker_info.get("clientId") or "") or None,
         )
 
         self._log_to_debug(f"Anycubic LAN handshake succeeded: {broker}")

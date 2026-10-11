@@ -126,12 +126,14 @@ class TestPublishing:
 
         topic, body = client._client.publish.call_args.args
 
+        sent = json.loads(body)
+
         assert topic.endswith("/web/printer/20025/DEVICE1234/multiColorBox")
-        assert json.loads(body) == {
-            "type": "multiColorBox",
-            "action": "getInfo",
-            "data": {},
-        }
+        assert (sent["type"], sent["action"], sent["data"]) == (
+            "multiColorBox",
+            "getInfo",
+            {},
+        )
 
     def test_the_ace_needs_getinfo_not_query(self):
         """Confirmed on a Kobra S1: "query" gets no reply at all."""
@@ -145,6 +147,18 @@ class TestPublishing:
         client.query("somethingNew")
 
         assert json.loads(client._client.publish.call_args.args[1])["action"] == "query"
+
+    def test_a_query_carries_the_full_envelope(self):
+        """A Photon P1 Max ignores a query without a timestamp and msgid."""
+        client, _ = make_client()
+        client._client = MagicMock()
+
+        client.query("status")
+
+        sent = json.loads(client._client.publish.call_args.args[1])
+
+        assert isinstance(sent["timestamp"], int)
+        assert sent["msgid"]
 
     def test_query_all_asks_for_every_type(self):
         client, _ = make_client()
@@ -177,6 +191,82 @@ class TestPublishing:
         """The printer answers "tempature"; correcting it gets no reply."""
         assert "tempature" in LAN_QUERY_TYPES
         assert "temperature" not in LAN_QUERY_TYPES
+
+
+class TestSubscription:
+    def test_a_refused_wildcard_is_narrowed_to_the_report_topics(self):
+        """A Photon P1 Max refuses "#" but grants the report topics."""
+        client, _ = make_client()
+        client._connected, client._loop = MagicMock(), MagicMock()
+        mqtt = MagicMock()
+
+        client._on_subscribe(mqtt, None, 1, (0x80,))
+
+        mqtt.subscribe.assert_called_once_with(
+            "anycubic/anycubicCloud/v1/printer/public/20025/DEVICE1234/+/report"
+        )
+        client._loop.call_soon_threadsafe.assert_not_called()
+
+        client._on_subscribe(mqtt, None, 2, (0,))
+
+        client._loop.call_soon_threadsafe.assert_called_once_with(client._connected.set)
+
+    def test_a_granted_wildcard_is_left_alone(self):
+        client, _ = make_client()
+        client._connected, client._loop = MagicMock(), MagicMock()
+        mqtt = MagicMock()
+
+        client._on_subscribe(mqtt, None, 1, (0,))
+
+        mqtt.subscribe.assert_not_called()
+        client._loop.call_soon_threadsafe.assert_called_once_with(client._connected.set)
+
+    def test_a_second_refusal_does_not_loop(self):
+        client, _ = make_client()
+        client._connected, client._loop = MagicMock(), MagicMock()
+        mqtt = MagicMock()
+
+        client._on_subscribe(mqtt, None, 1, (0x80,))
+        client._on_subscribe(mqtt, None, 2, (0x80,))
+
+        assert mqtt.subscribe.call_count == 1
+
+
+class TestClientId:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("named", "expected_prefix"),
+        [("ab12cd34", "ab12cd34"), (None, "ha-")],
+    )
+    async def test_the_printers_client_id_wins(self, monkeypatch, named, expected_prefix):
+        """A Photon P1 Max refuses any client id but the one it handed out."""
+        created = []
+
+        def fake_client(*args):
+            created.append(args[-1])
+            mqtt = MagicMock()
+            mqtt.connect.side_effect = OSError("no broker in a unit test")
+
+            return mqtt
+
+        monkeypatch.setattr(
+            "anycubic_cloud_api.lan.client.mqtt_client.Client", fake_client
+        )
+        broker = AnycubicLANBroker(
+            host="10.0.66.28",
+            port=8883,
+            username="user",
+            password="pass",
+            device_id="DEVICE1234",
+            model_id="132",
+            client_id=named,
+        )
+        client = AnycubicLANClient(broker, lambda *_: None)
+
+        with pytest.raises(AnycubicLANError):
+            await client.async_connect()
+
+        assert created[0].startswith(expected_prefix)
 
 
 class TestConnectionState:
