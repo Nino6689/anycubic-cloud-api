@@ -78,6 +78,23 @@ STATUS_REPORT = {
 }
 
 
+FILE_LIST_REPORT = {
+    "type": "file",
+    "action": "listLocal",
+    "msgid": "f6a5b4c3-3b4c-4d5e-8f9a-8c7b6d5e4f07",
+    "state": "done",
+    "timestamp": 1791802411000,
+    "code": 200,
+    "msg": "",
+    "data": {
+        "list_mode": 0,
+        "records": [
+            {"is_dir": True, "filename": "cloud", "timestamp": 1783045640, "size": 4096},
+        ],
+    },
+}
+
+
 def video_report(action, state, code=200, msg=""):
     return {
         "type": "video",
@@ -112,6 +129,7 @@ class TestWhatItReports:
         PERIPHERALS_REPORT,
         LIGHT_QUERY_REPORT,
         STATUS_REPORT,
+        FILE_LIST_REPORT,
     ])
     def test_every_real_report_is_fully_consumed(self, report):
         """Anything unread raises -- so this passing means nothing was missed."""
@@ -168,6 +186,29 @@ class TestWhatItReports:
         apply(printer, {**PERIPHERALS_REPORT, "data": {"camera": 1, "udisk": 0}})
 
         assert set(printer.connected_peripherals) == {"camera", "ace", "usb_disk"}
+
+    def test_a_folder_in_the_file_list_is_kept_as_one(self):
+        printer = make_printer()
+
+        apply(printer, FILE_LIST_REPORT)
+
+        (entry,) = printer._local_file_list
+        assert (entry.filename, entry.is_dir) == ("cloud", True)
+
+    def test_an_empty_folder_lists_as_empty(self):
+        printer = make_printer()
+
+        apply(printer, {**FILE_LIST_REPORT, "data": {"list_mode": 0, "records": []}})
+
+        assert printer.local_file_list_object is None
+
+    def test_the_light_it_has_is_kept_by_its_own_type(self):
+        printer = make_printer()
+
+        apply(printer, LIGHT_QUERY_REPORT)
+        apply(printer, {**LIGHT_QUERY_REPORT, "action": "control", "data": {"type": 3, "status": 1}})
+
+        assert printer._lights[3]["status"] == 1
 
     def test_free_reads_as_not_printing(self):
         printer = make_printer()
@@ -243,6 +284,13 @@ class TestWhatItIsAsked:
         command = lan_command_for_order(AnycubicOrderID.GET_RELEASE_FILM)
 
         assert (command.message_type, command.action) == ("releaseFilm", "get")
+
+    def test_a_file_listing_names_the_root_folder(self):
+        """Without a path the printer does not answer at all."""
+        command = lan_command_for_order(AnycubicOrderID.LIST_LOCAL_FILES)
+
+        assert (command.message_type, command.action) == ("file", "listLocal")
+        assert command.default_data == {"path": "/"}
 
     def test_resetting_the_release_film_is_not_guessed_at(self):
         assert lan_command_for_order(AnycubicOrderID.RESET_RELEASE_FILM) is None

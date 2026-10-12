@@ -39,6 +39,10 @@ class AnycubicLANCommand:
     # Locally there is no project id field, so the three print controls and the
     # in-progress settings change carry the task id inside ``data`` instead.
     needs_taskid: bool = False
+    # What the command carries when the order itself brings no data. A file
+    # listing is the case: the cloud order is bare, the local one is ignored
+    # unless it says which folder.
+    default_data: dict[str, object] | None = None
 
 
 # Keyed by cloud order. An order that is absent is one with no verified local
@@ -76,6 +80,13 @@ LAN_ORDER_COMMANDS: dict[int, AnycubicLANCommand] = {
     # not been sent to real hardware, and a counter is not something to zero
     # on a guess.
     AnycubicOrderID.GET_RELEASE_FILM: AnycubicLANCommand("releaseFilm", "get"),
+    # Verified against a Photon P1 Max only: it lists its storage when given
+    # a path and stays silent without one. Whether a Kobra wants the same is
+    # not known; before this the order went to the cloud, which cannot reach
+    # a printer in LAN Mode at all, so nothing that worked is given up.
+    AnycubicOrderID.LIST_LOCAL_FILES: AnycubicLANCommand(
+        "file", "listLocal", default_data={"path": "/"}
+    ),
 }
 
 
