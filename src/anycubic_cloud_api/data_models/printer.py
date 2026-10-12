@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
+from ..const.lan import LAN_CAMERA_ROTATION_BY_MODEL, LAN_CAMERA_ROTATIONS
 from ..const.enums import (
     AnycubicFunctionID,
     AnycubicPrinterMaterialType,
@@ -166,6 +167,7 @@ class AnycubicPrinter:
         "_resin_temperature",
         "_release_film",
         "_camera_is_streaming",
+        "_camera_rotation",
         "_auto_operations",
         "_print_self_check",
         "_last_print_error",
@@ -296,6 +298,8 @@ class AnycubicPrinter:
         self._resin_temperature: float | None = None
         self._release_film: dict[str, int] | None = None
         self._camera_is_streaming: bool | None = None
+        # None means "whatever this model needs"; a number is someone's choice.
+        self._camera_rotation: int | None = None
         self._auto_operations: dict[str, dict[str, int]] | None = None
         self._print_self_check: dict[str, int] | None = None
         self._last_print_error: dict[str, Any] | None = None
@@ -326,6 +330,26 @@ class AnycubicPrinter:
 
     def set_has_peripheral_udisk(self, has_peripheral: bool) -> None:
         self._has_peripheral_udisk = bool(has_peripheral)
+
+    def set_camera_rotation(self, degrees: int | None) -> None:
+        """Choose how far the camera picture is turned, clockwise.
+
+        0, 90, 180 or 270. None goes back to what the model needs by itself --
+        for a printer standing on its side or hanging upside down, the model's
+        own answer is the wrong one and this is how to say so.
+        """
+        if degrees is None:
+            self._camera_rotation = None
+            return
+
+        degrees = int(degrees) % 360
+
+        if degrees not in LAN_CAMERA_ROTATIONS:
+            raise ValueError(
+                f"Camera rotation must be one of {LAN_CAMERA_ROTATIONS}, not {degrees}."
+            )
+
+        self._camera_rotation = degrees
 
     def set_camera_stream_url(self, url: str | None) -> None:
         """Say where this printer's camera is served.
@@ -2433,6 +2457,22 @@ class AnycubicPrinter:
     def last_print_finish(self) -> dict[str, Any] | None:
         """What the printer logged when a job last ended."""
         return self._last_print_finish
+
+    @property
+    def camera_rotation(self) -> int:
+        """Degrees to turn the camera picture, clockwise, for it to stand upright.
+
+        A chosen value if there is one, otherwise what is known for this
+        model, otherwise 0. The stream itself is never altered; this is for
+        whoever shows it.
+        """
+        if self._camera_rotation is not None:
+            return self._camera_rotation
+
+        try:
+            return LAN_CAMERA_ROTATION_BY_MODEL.get(int(self._machine_type), 0)
+        except (TypeError, ValueError):
+            return 0
 
     @property
     def camera_is_streaming(self) -> bool | None:
