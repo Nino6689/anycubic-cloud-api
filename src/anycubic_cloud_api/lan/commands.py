@@ -71,6 +71,11 @@ LAN_ORDER_COMMANDS: dict[int, AnycubicLANCommand] = {
     AnycubicOrderID.QUERY_PERIPHERALS: AnycubicLANCommand("peripherie", "query"),
     AnycubicOrderID.GET_LIGHT_STATUS: AnycubicLANCommand("light", "query"),
     AnycubicOrderID.SET_LIGHT_STATUS: AnycubicLANCommand("light", "control"),
+    # Resin printers. Verified against a Photon P1 Max, which answers with
+    # the film's use count. The matching reset is deliberately absent: it has
+    # not been sent to real hardware, and a counter is not something to zero
+    # on a guess.
+    AnycubicOrderID.GET_RELEASE_FILM: AnycubicLANCommand("releaseFilm", "get"),
 }
 
 

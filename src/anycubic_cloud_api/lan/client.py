@@ -42,6 +42,7 @@ try:
 except ImportError:  # paho-mqtt 1.x
     _MQTT_CALLBACK_API_VERSION = None
 
+from ..const.lan import LAN_CAMERA_STREAM_PATH, LAN_CAMERA_STREAM_PORT
 from ..const.mqtt import MQTT_TOPIC_PREFIX
 from ..exceptions.error_strings import ErrorsLAN
 from ..exceptions.exceptions import AnycubicLANError
@@ -74,6 +75,13 @@ LAN_QUERY_ACTIONS = {
     # simply stay silent rather than erroring, so asking costs nothing.
     "axis": "query",
     "extfilbox": "query",
+    # Resin printers. A Photon P1 Max answers none of the FDM queries above
+    # except light and peripherie -- no info report, so "status" is the only
+    # place it says whether it is free or busy -- and keeps a counter for its
+    # release film that has to be asked for with "get" rather than "query".
+    # Filament printers stay silent for releaseFilm.
+    "status": "query",
+    "releaseFilm": "get",
 }
 
 LAN_QUERY_TYPES = tuple(LAN_QUERY_ACTIONS)
@@ -320,6 +328,31 @@ class AnycubicLANClient:
         )
 
         return msgid
+
+    @property
+    def camera_stream_url(self) -> str:
+        """Where the printer serves its camera while a capture is running.
+
+        An FLV stream (H.264) over plain HTTP. For printers that name their
+        own stream in an info report this is the same address; it is built
+        here for the ones that do not.
+        """
+        return (
+            f"http://{self._broker.host}:{LAN_CAMERA_STREAM_PORT}"
+            f"{LAN_CAMERA_STREAM_PATH}"
+        )
+
+    def start_camera(self) -> str:
+        """Ask the printer to start serving its camera locally.
+
+        The stream port stays closed until this has been sent; the printer
+        answers with a video report in state ``initSuccess``.
+        """
+        return self.publish_command("video", "startCapture", {})
+
+    def stop_camera(self) -> str:
+        """Ask the printer to stop serving its camera."""
+        return self.publish_command("video", "stopCapture", {})
 
     def query(self, message_type: str) -> None:
         """Ask the printer to report one kind of state."""

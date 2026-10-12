@@ -161,6 +161,11 @@ class AnycubicPrinter:
         "_has_peripheral_camera",
         "_has_peripheral_multi_color_box",
         "_has_peripheral_udisk",
+        "_has_peripheral_smart_resin_vat",
+        "_has_peripheral_air_purifier",
+        "_resin_temperature",
+        "_release_film",
+        "_camera_is_streaming",
         "_is_bound_to_user",
         "_job_download_progress",
         "_lights",
@@ -281,6 +286,12 @@ class AnycubicPrinter:
         self._has_peripheral_camera: bool | None = None
         self._has_peripheral_multi_color_box: bool | None = None
         self._has_peripheral_udisk: bool | None = None
+        self._has_peripheral_smart_resin_vat: bool | None = None
+        self._has_peripheral_air_purifier: bool | None = None
+        # Resin printers only. None until the printer has said.
+        self._resin_temperature: float | None = None
+        self._release_film: dict[str, int] | None = None
+        self._camera_is_streaming: bool | None = None
         self._is_bound_to_user: bool = True
         self._job_download_progress: int = 0
         self._aux_fan_speed: int | None = None
@@ -307,6 +318,14 @@ class AnycubicPrinter:
 
     def set_has_peripheral_udisk(self, has_peripheral: bool) -> None:
         self._has_peripheral_udisk = bool(has_peripheral)
+
+    def set_camera_stream_url(self, url: str | None) -> None:
+        """Say where this printer's camera is served.
+
+        For printers that never name the address themselves: whoever holds the
+        local connection knows the host and can fill it in.
+        """
+        self._camera_stream_url = url
 
     def _set_type_function_ids(self, type_function_ids: list[int] | None) -> None:
         if isinstance(type_function_ids, list):
@@ -1425,9 +1444,85 @@ class AnycubicPrinter:
             if 'udisk' in data:
                 self.set_has_peripheral_udisk(data['udisk'])
 
+            # Resin printers list their own two.
+            if 'smartResinVat' in data:
+                self._has_peripheral_smart_resin_vat = bool(data['smartResinVat'])
+
+            if 'airpure' in data:
+                self._has_peripheral_air_purifier = bool(data['airpure'])
+
             return
         else:
             raise AnycubicMQTTUnknownUpdate(ErrorsMQTTUpdate.peripherals)
+
+    def _process_mqtt_update_properties(
+        self,
+        action: str,
+        state: str,
+        payload: AnycubicConsumableData,
+    ) -> None:
+        """Readings a resin printer pushes unasked, every few seconds.
+
+        Captured from a Photon P1 Max: ``{'resin_temp': 24.389999}``.
+        """
+        if action != 'report' or state != 'done':
+            raise AnycubicMQTTUnknownUpdate(ErrorsMQTTUpdate.unknown.format('properties'))
+
+        data = payload['data']
+
+        if not data:
+            return
+
+        if 'resin_temp' in data:
+            resin_temp = data['resin_temp']
+            self._resin_temperature = float(resin_temp) if resin_temp is not None else None
+
+    def _process_mqtt_update_release_film(
+        self,
+        action: str,
+        state: str,
+        payload: AnycubicConsumableData,
+    ) -> None:
+        """How worn the release film is.
+
+        Captured from a Photon P1 Max: ``{'times': 0, 'layers': 0, 'status': 0}``.
+        """
+        if action != 'get' or state != 'done':
+            raise AnycubicMQTTUnknownUpdate(ErrorsMQTTUpdate.unknown.format('releaseFilm'))
+
+        data = payload['data']
+
+        if not data:
+            return
+
+        self._release_film = {
+            'times': int(data.get('times') or 0),
+            'layers': int(data.get('layers') or 0),
+            'status': int(data.get('status') or 0),
+        }
+
+    def _process_mqtt_update_video(
+        self,
+        action: str,
+        state: str,
+        payload: AnycubicConsumableData,
+    ) -> None:
+        """Whether the local camera stream is being served.
+
+        A Photon P1 Max answers ``startCapture`` with state ``initSuccess``
+        and ``stopCapture`` with ``done`` (twice: push ended, then stopped),
+        followed by one more ``stopCapture`` in state ``initSuccess`` with
+        code 1404 once nothing is left to stop. None of them carry data.
+        """
+        if action == 'startCapture':
+            if state == 'initSuccess':
+                self._camera_is_streaming = True
+            elif state in ('failed', 'initFailed'):
+                self._camera_is_streaming = False
+        elif action == 'stopCapture':
+            self._camera_is_streaming = False
+        else:
+            raise AnycubicMQTTUnknownUpdate(ErrorsMQTTUpdate.unknown.format('video'))
 
     def _process_mqtt_update_light(
         self,
@@ -1715,6 +1810,15 @@ class AnycubicPrinter:
 
         elif msg_type == 'light':
             self._process_mqtt_update_light(action, state, payload)
+
+        elif msg_type == 'properties':
+            self._process_mqtt_update_properties(action, state, payload)
+
+        elif msg_type == 'releaseFilm':
+            self._process_mqtt_update_release_film(action, state, payload)
+
+        elif msg_type == 'video':
+            self._process_mqtt_update_video(action, state, payload)
 
         elif msg_type == 'info':
             self._process_mqtt_update_info(action, state, payload)
@@ -2138,12 +2242,55 @@ class AnycubicPrinter:
         return self._has_peripheral_udisk
 
     @property
+    def has_peripheral_smart_resin_vat(self) -> bool | None:
+        return self._has_peripheral_smart_resin_vat
+
+    @property
+    def has_peripheral_air_purifier(self) -> bool | None:
+        return self._has_peripheral_air_purifier
+
+    @property
     def connected_peripherals(self) -> dict[str, bool | None]:
-        return {
+        peripherals = {
             "camera": self.has_peripheral_camera,
             "ace": self.has_peripheral_multi_color_box,
             "usb_disk": self.has_peripheral_udisk,
         }
+
+        # Only for printers that mention them, so a filament printer's list
+        # does not grow two entries it will never fill.
+        if self._has_peripheral_smart_resin_vat is not None:
+            peripherals["smart_resin_vat"] = self._has_peripheral_smart_resin_vat
+
+        if self._has_peripheral_air_purifier is not None:
+            peripherals["air_purifier"] = self._has_peripheral_air_purifier
+
+        return peripherals
+
+    @property
+    def resin_temperature(self) -> float | None:
+        """Resin temperature in degrees Celsius, as a resin printer reports it."""
+        return self._resin_temperature
+
+    @property
+    def release_film_times(self) -> int | None:
+        """How many times the release film has been used."""
+        return self._release_film['times'] if self._release_film else None
+
+    @property
+    def release_film_layers(self) -> int | None:
+        """How many layers have been printed on the release film."""
+        return self._release_film['layers'] if self._release_film else None
+
+    @property
+    def release_film_status(self) -> int | None:
+        """The printer's own verdict on the film; 0 on a fresh one."""
+        return self._release_film['status'] if self._release_film else None
+
+    @property
+    def camera_is_streaming(self) -> bool | None:
+        """Whether the local camera stream is being served. None until told."""
+        return self._camera_is_streaming
 
     @property
     def material_type(self) -> AnycubicPrinterMaterialType | str | None:
