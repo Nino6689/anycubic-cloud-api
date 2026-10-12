@@ -48,6 +48,14 @@ class AnycubicLANCommand:
 # Keyed by cloud order. An order that is absent is one with no verified local
 # form, and is left to the cloud rather than being approximated.
 LAN_ORDER_COMMANDS: dict[int, AnycubicLANCommand] = {
+    # Starting a print is the cloud order's own data plus a task id of "-1":
+    # locally nobody has issued a task yet, and the printer assigns one and
+    # reports it back. Verified against a Photon P1 Max with a file on its
+    # USB stick. Not known for a Kobra; before this the order went to the
+    # cloud, which cannot reach a printer in LAN Mode.
+    AnycubicOrderID.START_PRINT: AnycubicLANCommand(
+        "print", "start", default_data={"taskid": "-1"}
+    ),
     AnycubicOrderID.PAUSE_PRINT: AnycubicLANCommand("print", "pause", True),
     AnycubicOrderID.RESUME_PRINT: AnycubicLANCommand("print", "resume", True),
     AnycubicOrderID.STOP_PRINT: AnycubicLANCommand("print", "stop", True),
@@ -86,6 +94,9 @@ LAN_ORDER_COMMANDS: dict[int, AnycubicLANCommand] = {
     # a printer in LAN Mode at all, so nothing that worked is given up.
     AnycubicOrderID.LIST_LOCAL_FILES: AnycubicLANCommand(
         "file", "listLocal", default_data={"path": "/"}
+    ),
+    AnycubicOrderID.LIST_UDISK_FILES: AnycubicLANCommand(
+        "file", "listUdisk", default_data={"path": "/"}
     ),
 }
 
