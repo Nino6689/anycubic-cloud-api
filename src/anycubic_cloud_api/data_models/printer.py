@@ -1406,7 +1406,12 @@ class AnycubicPrinter:
         payload: AnycubicConsumableData,
     ) -> None:
         if action == 'listLocal' and state == 'done':
-            data = payload['data']['records']
+            listing = payload['data']
+            # Sent by a Photon P1 Max alongside the records; 0 on the one
+            # listing seen so far, meaning unknown. Read so it is not mistaken
+            # for something unhandled.
+            listing.get('list_mode')
+            data = listing['records']
             self._set_local_file_list(data)
             return
         elif action == 'deleteLocal' and state == 'success':
