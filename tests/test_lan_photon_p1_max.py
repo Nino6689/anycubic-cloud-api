@@ -254,6 +254,51 @@ class TestTheCamera:
         assert printer.camera_stream_url == "http://10.0.66.40:18088/flv"
 
 
+class TestWhichWayIsUp:
+    """The stream is served as the sensor sees it, and on this model that is sideways."""
+
+    def test_a_photon_p1_max_needs_a_quarter_turn_back(self):
+        assert make_printer().camera_rotation == 270
+
+    def test_a_model_nobody_has_measured_is_left_alone(self):
+        printer = AnycubicPrinter(
+            api_parent=MagicMock(),
+            machine_type=20025,
+            machine_name="Anycubic Kobra S1",
+            id=1,
+            ignore_init_errors=True,
+        )
+
+        assert printer.camera_rotation == 0
+
+    @pytest.mark.parametrize("degrees", [0, 90, 180, 270])
+    def test_a_chosen_rotation_wins(self, degrees):
+        printer = make_printer()
+
+        printer.set_camera_rotation(degrees)
+
+        assert printer.camera_rotation == degrees
+
+    def test_a_full_turn_and_more_is_taken_as_what_it_amounts_to(self):
+        printer = make_printer()
+
+        printer.set_camera_rotation(450)
+
+        assert printer.camera_rotation == 90
+
+    def test_none_goes_back_to_the_model_s_own(self):
+        printer = make_printer()
+        printer.set_camera_rotation(180)
+
+        printer.set_camera_rotation(None)
+
+        assert printer.camera_rotation == 270
+
+    def test_anything_but_a_quarter_turn_is_refused(self):
+        with pytest.raises(ValueError):
+            make_printer().set_camera_rotation(45)
+
+
 BROKER = AnycubicLANBroker(
     host="10.0.66.40",
     port=8883,
