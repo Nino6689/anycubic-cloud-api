@@ -46,6 +46,15 @@ PRINT_STATES_NOT_IN_PROGRESS = frozenset({
     'stopped',
 })
 
+# The speed presets an FDM printer takes over its own network, in the shape
+# the cloud sends them. 1, 2 and 3 are what a Kobra S1 and a Kobra 4 report
+# and accept; a printer that sends its own list is never overridden.
+LAN_PRINT_SPEED_MODES: tuple[dict[str, Any], ...] = (
+    {'title': 'Silent', 'print_speed_mode': 1},
+    {'title': 'Standard', 'print_speed_mode': 2},
+    {'title': 'Sport', 'print_speed_mode': 3},
+)
+
 
 class AnycubicProject:
     __slots__ = (
@@ -305,6 +314,13 @@ class AnycubicProject:
             project_type=data.get('project_type'),
             localtask=data.get('localtask'),
             print_speed_mode=data.get('print_speed_mode'),
+            # The cloud sends the printer's speed presets with the job; the
+            # printer does not. Without a list the speed select stayed
+            # unavailable through every LAN print, though the printer takes
+            # the change locally as the slicer shows (discussion #37).
+            available_print_speed_modes=(
+                data.get('print_speed_model_des') or list(LAN_PRINT_SPEED_MODES)
+            ),
         )
 
     @classmethod

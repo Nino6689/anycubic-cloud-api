@@ -24,6 +24,7 @@ from ..exceptions.exceptions import (
     AnycubicMQTTUnknownUpdate,
 )
 from ..helpers.helpers import (
+    as_int,
     get_part_from_mqtt_topic,
     time_duration_string_to_delta,
     timedelta_to_dhm_string,
@@ -51,6 +52,32 @@ if TYPE_CHECKING:
     from ..anycubic_api import AnycubicAPI
     from .print_response import AnycubicPrintResponse
     from .printer_properties import AnycubicDryingStatus, AnycubicMaterialMapping
+
+# Job progress a print update can carry, applied to the job it is about.
+_PRINT_PROGRESS_KEYS = (
+    'curr_layer',
+    'total_layers',
+    'filename',
+    'print_time',
+    'progress',
+    'remain_time',
+    'supplies_usage',
+)
+
+# How a printer words a refused order when it gives no code.
+_REFUSED_STATES = frozenset({'failed', 'fail', 'error', 'refused'})
+
+# What a print report says about the file being printed, which the job already
+# knows by name. Read so the report is not flagged as unhandled data on every
+# progress tick (#34, #42) -- nothing here changes what is shown.
+_PRINT_FILE_KEYS = (
+    'file_root_path',
+    'filetype',
+    'display_filename',
+    'origin3mf',
+    'source_info',
+    'temp_gcode',
+)
 
 
 def _drain(consumable: Any) -> dict[str, Any]:
@@ -1283,6 +1310,19 @@ class AnycubicPrinter:
                     settings['target_hotbed_temp'],
                     settings['target_nozzle_temp'],
                 )
+            # The light is reported by its own message; here it only repeats.
+            settings.get('light')
+            # Read again now it is empty, which is what marks a nested block
+            # consumed; left in place it was reported as unhandled data.
+            data.get('settings')
+
+            if 'channel_no' in data:
+                self._apply_active_channel(data['channel_no'])
+
+            # A Kobra X reports progress this way between info reports, with
+            # no task id. It was logged as unhandled and dropped (#34).
+            if any(key in data for key in _PRINT_PROGRESS_KEYS):
+                self._apply_print_progress(project_id, data)
             return
         elif action in ['start', 'stop'] and state in ['failed']:
             err_msg = payload.get('msg')
@@ -1295,6 +1335,95 @@ class AnycubicPrinter:
             raise AnycubicAPIError(ErrorsGeneral.print_failed.format(err_msg))
         else:
             raise AnycubicMQTTUnknownUpdate(ErrorsMQTTUpdate.job_status)
+
+    def _apply_active_channel(self, channel_no: Any) -> None:
+        """Follow the filament channel the printer says it is printing from.
+
+        A Kobra X reports each filament change as a print update carrying
+        only ``channel_no``, and stops sending the ACE's own ``loaded_slot``
+        after the first few changes of a print -- which is why the loaded
+        slot froze for the rest of the job (#34). The channel is numbered
+        from 1 across every box in order, so channel 5 on a printer whose
+        first box has four slots is the first slot of the second box.
+        """
+        channel = as_int(channel_no, 0)
+
+        if channel < 1 or not self._multi_color_box:
+            return
+
+        index = channel - 1
+
+        for box in self._multi_color_box:
+            slot_count = len(box.slots)
+
+            if index < slot_count:
+                box.set_slot_loaded(index)
+                return
+
+            index -= slot_count
+
+    def _apply_print_progress(
+        self,
+        project_id: int,
+        data: AnycubicConsumableData,
+    ) -> None:
+        """Apply a progress-only print update to the job it is about.
+
+        Sent without a task id, it can only be about the job in hand. With
+        no job to apply it to it is dropped, as the cloud path always has.
+        """
+        if not self._check_latest_project_id_valid(project_id):
+            data.force_empty()
+            return
+
+        assert self._latest_project
+        self._latest_project.update_with_mqtt_print_status_data(None, data)
+
+    def _report_refused_drying(
+        self,
+        state: str | None,
+        payload: AnycubicConsumableData,
+    ) -> bool:
+        """Say so when the printer will not start a dry cycle.
+
+        A start the ACE refuses -- 65 C on an ACE Pro that tops out at 55 is
+        code 11505 -- came back as a setDry reply that was not a success. It
+        was thrown away as "not understood", so the button press looked like
+        it had worked and nothing in Home Assistant said otherwise (#42).
+
+        The code is kept as the printer's latest error, the same as any other
+        fault, so the last-error sensors show it too. A reply that is neither
+        a fault code nor a failed state is left to be reported as unknown.
+        """
+        data = payload.remaining_data.get('data')
+        code = payload.remaining_data.get('code')
+
+        if isinstance(data, AnycubicConsumableData) and 'code' in data:
+            code = data.remaining_data.get('code')
+
+        if not isinstance(code, int) or isinstance(code, bool) or code in PRINTER_OK_CODES:
+            code = None
+
+        if code is None and str(state or '').lower() not in _REFUSED_STATES:
+            return False
+
+        message = payload.get('msg')
+
+        if code is not None:
+            self._record_error_code(code, message)
+            reason = f"code {code}: {describe_printer_code(code)}"
+        else:
+            reason = str(message or state or 'no reason given')
+
+        self._api_parent._log_to_warn(
+            f"The printer refused to start drying on the ACE ({reason})."
+        )
+
+        payload.get('data')
+        if isinstance(data, AnycubicConsumableData):
+            data.force_empty()
+
+        return True
 
     def _process_mqtt_update_multicolorbox(
         self,
@@ -1339,6 +1468,8 @@ class AnycubicPrinter:
                 assert self._multi_color_box
                 self._multi_color_box[box_id].set_current_temperature(box['temp'])
                 self._multi_color_box[box_id].set_drying_status(box['drying_status'])
+            return
+        elif action == 'setDry' and self._report_refused_drying(state, payload):
             return
         elif action == 'feedFilament' and state == 'done':
             data = payload['data']['multi_color_box']
@@ -1733,6 +1864,10 @@ class AnycubicPrinter:
         if remaining_data:
             remaining_data.get('taskid')
             remaining_data.get('localtask')
+
+            if msg_type == 'print':
+                for key in _PRINT_FILE_KEYS:
+                    remaining_data.get(key)
 
         payload.get('data')
         payload.get('msg')

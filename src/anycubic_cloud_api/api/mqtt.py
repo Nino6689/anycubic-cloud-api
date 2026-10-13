@@ -171,8 +171,12 @@ class AnycubicMQTTAPI(AnycubicAPIFunctions):
                 printer.process_mqtt_update(topic, AnycubicConsumableData(payload))
 
             except AnycubicMQTTUnhandledData as e:
+                # The message was applied; only fields this version has no use
+                # for were left over. That is for whoever extends the parser,
+                # not something a user can act on, and at warning level it was
+                # repeated every few seconds through every print (#42).
                 redacted_topic = redact_part_from_mqtt_topic(topic, 6)
-                self._log_to_warn(
+                self._log_to_debug(
                     f"Anycubic MQTT Message unhandled data in: {e}\n"
                     f"  on MQTT topic: {redacted_topic}\n"
                     f"  with type: {e.unhandled_mqtt_type}, "
