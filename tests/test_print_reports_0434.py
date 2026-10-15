@@ -90,13 +90,18 @@ class TestActiveChannel:
 
         assert printer.primary_multi_color_box_loaded_slot == slot_index
 
-    def test_channels_beyond_the_first_box_land_in_the_next(self):
-        """Channel 5 with four slots in the first box is the second box's first."""
+    @pytest.mark.parametrize("channel_no", [1, 5])
+    def test_with_two_boxes_and_no_unit_nothing_is_guessed(self, channel_no):
+        """Channels are numbered per box (#33), so without a unit the box is unknown.
+
+        0.4.34 counted across boxes and put channel 5 in the second box.
+        """
         printer = make_printer([box(0), box(1)])
+        before = [b.loaded_slot for b in printer.multi_color_box]
 
-        self._channel(printer, 5)
+        self._channel(printer, channel_no)
 
-        assert printer.secondary_multi_color_box_loaded_slot == 0
+        assert [b.loaded_slot for b in printer.multi_color_box] == before
 
     @pytest.mark.parametrize("channel_no", [0, -1, 9, None, "x"])
     def test_a_channel_with_no_slot_changes_nothing(self, channel_no):

@@ -64,6 +64,20 @@ _PRINT_PROGRESS_KEYS = (
     'supplies_usage',
 )
 
+# The steps of a filament change, as a Kobra X with an ACE 2 Pro reports
+# them (#33). The ACE unfeed is the mirror of the feed, not yet seen.
+_FILAMENT_CHANGE_STATES = frozenset({
+    'extfilbox_filament_feeding',
+    'extfilbox_filament_unfeeding',
+    'ace_filament_feeding',
+    'ace_filament_unfeeding',
+    'nozzle_purging',
+})
+
+# Printers with a feeder of their own, which shares the box list with any
+# ACE fitted: the Kobra X.
+_PRINTERS_WITH_OWN_FEEDER = frozenset({20030})
+
 # How a printer words a refused order when it gives no code.
 _REFUSED_STATES = frozenset({'failed', 'fail', 'error', 'refused'})
 
@@ -1317,12 +1331,22 @@ class AnycubicPrinter:
             data.get('settings')
 
             if 'channel_no' in data:
-                self._apply_active_channel(data['channel_no'])
+                self._apply_active_channel(data['channel_no'], data.get('unit_no'))
 
             # A Kobra X reports progress this way between info reports, with
             # no task id. It was logged as unhandled and dropped (#34).
             if any(key in data for key in _PRINT_PROGRESS_KEYS):
                 self._apply_print_progress(project_id, data)
+            return
+        elif action == 'start' and state in _FILAMENT_CHANGE_STATES:
+            # Each step of a filament change, naming the channel (and, for an
+            # ACE, the unit). Only a feed says what is now loaded (#33).
+            data = payload.get('data') or {}
+            # Read on every step, so the ones that change nothing are not
+            # reported as unhandled.
+            channel_no, unit_no = data.get('channel_no'), data.get('unit_no')
+            if state.endswith('_filament_feeding'):
+                self._apply_active_channel(channel_no, unit_no)
             return
         elif action in ['start', 'stop'] and state in ['failed']:
             err_msg = payload.get('msg')
@@ -1336,31 +1360,37 @@ class AnycubicPrinter:
         else:
             raise AnycubicMQTTUnknownUpdate(ErrorsMQTTUpdate.job_status)
 
-    def _apply_active_channel(self, channel_no: Any) -> None:
+    def _apply_active_channel(self, channel_no: Any, unit_no: Any = None) -> None:
         """Follow the filament channel the printer says it is printing from.
 
         A Kobra X reports each filament change as a print update carrying
-        only ``channel_no``, and stops sending the ACE's own ``loaded_slot``
-        after the first few changes of a print -- which is why the loaded
-        slot froze for the rest of the job (#34). The channel is numbered
-        from 1 across every box in order, so channel 5 on a printer whose
-        first box has four slots is the first slot of the second box.
+        ``channel_no``, and stops sending the box's own ``loaded_slot`` after
+        the first few changes of a print, which is why the loaded slot froze
+        (#34). Each box numbers its channels from 1; an ACE adds ``unit_no``
+        and the printer's own feeder sends none (#33, Kobra X + ACE 2 Pro).
+
+        With one box the channel can only mean that box. With several, an
+        ACE's ``unit_no`` picks it on a printer whose boxes are all ACEs.
+        On a Kobra X with an ACE, which list entry is the printer's own
+        feeder is not yet confirmed, so nothing is guessed there: a wrong
+        slot is worse than a stale one.
         """
         channel = as_int(channel_no, 0)
+        boxes = self._multi_color_box
 
-        if channel < 1 or not self._multi_color_box:
+        if channel < 1 or not boxes:
             return
 
-        index = channel - 1
-
-        for box in self._multi_color_box:
-            slot_count = len(box.slots)
-
-            if index < slot_count:
-                box.set_slot_loaded(index)
+        if len(boxes) == 1:
+            box = boxes[0]
+        else:
+            unit = as_int(unit_no, 0)
+            if unit < 1 or unit > len(boxes) or self._machine_type in _PRINTERS_WITH_OWN_FEEDER:
                 return
+            box = boxes[unit - 1]
 
-            index -= slot_count
+        if channel <= len(box.slots):
+            box.set_slot_loaded(channel - 1)
 
     def _apply_print_progress(
         self,
@@ -1466,8 +1496,12 @@ class AnycubicPrinter:
                     continue
 
                 assert self._multi_color_box
-                self._multi_color_box[box_id].set_current_temperature(box['temp'])
-                self._multi_color_box[box_id].set_drying_status(box['drying_status'])
+                # An ACE 2 Pro's periodic drying report carries no `temp`, and
+                # reading it raised every six minutes, so drying never updated
+                # (#33). Keep the last reading rather than inventing one.
+                if 'temp' in box:
+                    self._multi_color_box[box_id].set_current_temperature(box['temp'])
+                self._multi_color_box[box_id].set_drying_status(box.get('drying_status'))
             return
         elif action == 'setDry' and self._report_refused_drying(state, payload):
             return
