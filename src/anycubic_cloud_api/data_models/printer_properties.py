@@ -702,6 +702,7 @@ class AnycubicMultiColorBox:
         "_model_id",
         "_auto_feed",
         "_loaded_slot",
+        "_slot_from_printer",
         "_feed_status",
         "_temp",
         "_humidity",
@@ -734,6 +735,9 @@ class AnycubicMultiColorBox:
         self._model_id: int = as_int(model_id)
         self._auto_feed: int = as_int(auto_feed)
         self._loaded_slot: int = as_int(loaded_slot, -1)
+        # Whether the printer itself has reported the loaded slot, as opposed
+        # to a cloud record that only knew it at some earlier point.
+        self._slot_from_printer = False
         self.set_feed_status(feed_status)
         self.set_current_temperature(temp)
         self._humidity: float | None = (
@@ -759,7 +763,21 @@ class AnycubicMultiColorBox:
         self._feed_status = AnycubicFeedStatus.from_json(feed_status)
 
     def set_slot_loaded(self, slot_num: int) -> None:
+        """A loaded slot reported by the printer (MQTT or LAN)."""
         self._loaded_slot = as_int(slot_num, -1)
+        self._slot_from_printer = True
+
+    def keep_printer_slot_from(self, previous: AnycubicMultiColorBox) -> None:
+        """Carry over a slot the printer reported, past a cloud refresh.
+
+        The cloud's record of the loaded slot goes stale during a print: a
+        Kobra X kept reporting slot 4 while each cloud poll said slot 2, and
+        the sensor flipped to 2 mid-print (#34). What the printer said last
+        wins until it says something else.
+        """
+        if previous._slot_from_printer:
+            self._loaded_slot = previous._loaded_slot
+            self._slot_from_printer = True
 
     def set_current_temperature(self, temp: int) -> None:
         # Reached from the constructor as well as from MQTT, so a null

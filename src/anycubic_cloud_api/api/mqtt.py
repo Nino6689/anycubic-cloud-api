@@ -42,6 +42,7 @@ from ..helpers.helpers import (
     get_mqtt_ssl_path_key,
     get_part_from_mqtt_topic,
     get_ssl_cert_directory,
+    redact_for_log,
     redact_part_from_mqtt_topic,
 )
 from .functions import AnycubicAPIFunctions
@@ -151,7 +152,7 @@ class AnycubicMQTTAPI(AnycubicAPIFunctions):
         if self._mqtt_topic_is_user_topic(topic):
             self._log_to_debug(
                 f"Anycubic MQTT USER Msg Received on `{topic}`:\n"
-                f"    {payload}"
+                f"    {redact_for_log(payload)}"
             )
 
         else:
@@ -182,7 +183,7 @@ class AnycubicMQTTAPI(AnycubicAPIFunctions):
                     f"  with type: {e.unhandled_mqtt_type}, "
                     f"action: {e.unhandled_mqtt_action}, "
                     f"state: {e.unhandled_mqtt_state}\n"
-                    f"    unhandled data: {e.unhandled_mqtt_data}"
+                    f"    unhandled data: {redact_for_log(e.unhandled_mqtt_data)}"
                 )
 
             except AnycubicMQTTUnknownUpdate as e:
@@ -193,7 +194,7 @@ class AnycubicMQTTAPI(AnycubicAPIFunctions):
                 self._log_to_debug(
                     f"Anycubic MQTT Message not understood: {e}\n"
                     f"  on MQTT topic: {redacted_topic}\n"
-                    f"    {payload}"
+                    f"    {redact_for_log(payload)}"
                 )
 
             except Exception as e:
@@ -203,7 +204,7 @@ class AnycubicMQTTAPI(AnycubicAPIFunctions):
                 self._log_to_error(
                     f"Anycubic MQTT Message error: {error_type}: {e}\n"
                     f"  on MQTT topic: {redacted_topic}\n"
-                    f"    {payload}\n"
+                    f"    {redact_for_log(payload)}\n"
                     f"{tb}"
                 )
 
@@ -230,7 +231,7 @@ class AnycubicMQTTAPI(AnycubicAPIFunctions):
                 self._log_to_debug(
                     f"Anycubic MQTT Message processed on topic: "
                     f"{redact_part_from_mqtt_topic(topic, 6)}\n"
-                    f"    {payload}"
+                    f"    {redact_for_log(payload)}"
                 )
 
     def _mqtt_publish_on_topic(

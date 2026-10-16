@@ -164,6 +164,34 @@ def get_part_from_mqtt_topic(topic: str, part: int) -> str | None:
     return split_topic[part]
 
 
+# Identifiers a printer puts in its own reports. A debug log gets pasted into
+# public issues, and only the topic's printer key was being redacted: a
+# Kobra X's PrintStart report carried its cn_code in the clear (#34).
+_LOG_REDACT_KEYS = frozenset({
+    'cn_code', 'cn', 'sn', 'serial', 'machine_sn', 'mac', 'machine_mac',
+    'ip', 'key', 'printer_key', 'device_id', 'deviceId', 'user_id', 'email',
+})
+_LOG_REDACT_PARTS = ('token', 'secret', 'password')
+
+
+def redact_for_log(data: Any) -> Any:
+    """A copy of an MQTT payload that is safe to put in a log."""
+    if isinstance(data, dict):
+        return {
+            key: (
+                "**REDACTED**"
+                if isinstance(key, str)
+                and data[key] not in (None, '')
+                and (key in _LOG_REDACT_KEYS or any(part in key.lower() for part in _LOG_REDACT_PARTS))
+                else redact_for_log(data[key])
+            )
+            for key in data
+        }
+    if isinstance(data, list):
+        return [redact_for_log(item) for item in data]
+    return data
+
+
 def redact_part_from_mqtt_topic(topic: str, part: int) -> str:
     split_topic = topic.split("/")
     new_chunk = list()

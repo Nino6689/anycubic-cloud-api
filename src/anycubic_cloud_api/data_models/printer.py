@@ -452,6 +452,12 @@ class AnycubicPrinter:
                         updated.get(box.box_id, box) for box in known_boxes
                     ])
 
+                if known_boxes:
+                    previous = {box.box_id: box for box in known_boxes}
+                    for box in self._multi_color_box:
+                        if (known := previous.get(box.box_id)) is not None and known is not box:
+                            box.keep_printer_slot_from(known)
+
         except Exception as e:
             self._initialisation_error = True
             # Swallowing this leaves the ACE list empty, which presents as
@@ -1542,8 +1548,31 @@ class AnycubicPrinter:
             if self.external_shelves:
                 self.external_shelves.update_with_mqtt_data(data)
             return
+        elif action == 'auto' and state == 'done':
+            # Sent as a filament change completes, naming the feeding slot as
+            # "<box>-<slot>", both counted from 0 ("0-3" while the screen shows
+            # slot 4 on a Kobra X, #34); empty while the filament is retracted.
+            data = payload.get('data') or {}
+            self._apply_current_filament(data.get('current_filament'))
+            return
         else:
             raise AnycubicMQTTUnknownUpdate(ErrorsMQTTUpdate.shelves)
+
+    def _apply_current_filament(self, current_filament: Any) -> None:
+        """Follow the printer's own "<box>-<slot>" reading, where the box is certain.
+
+        Only with a single box: which list entry the printer's box number
+        means beside an ACE is not confirmed (#33). An empty reading is a
+        retract for calibration or wiping, not a change of slot, so the last
+        slot is kept.
+        """
+        boxes = self._multi_color_box
+        if not isinstance(current_filament, str) or not boxes or len(boxes) != 1:
+            return
+        box_no, _, slot_no = current_filament.partition('-')
+        box_index, slot_index = as_int(box_no, -1), as_int(slot_no, -1)
+        if box_index == 0 and 0 <= slot_index < len(boxes[0].slots):
+            boxes[0].set_slot_loaded(slot_index)
 
     def _process_mqtt_update_file(
         self,
