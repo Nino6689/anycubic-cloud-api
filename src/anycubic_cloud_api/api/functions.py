@@ -469,6 +469,9 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
 
         data = order_request.order_data
 
+        if command.default_data is not None:
+            data = {**command.default_data, **(data or {})}
+
         if command.needs_taskid:
             project_id = order_request.project_id
 

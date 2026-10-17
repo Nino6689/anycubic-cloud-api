@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
+from ..const.lan import LAN_CAMERA_ROTATION_BY_MODEL, LAN_CAMERA_ROTATIONS
 from ..const.enums import (
     AnycubicFunctionID,
     AnycubicPrinterMaterialType,
@@ -202,6 +203,16 @@ class AnycubicPrinter:
         "_has_peripheral_camera",
         "_has_peripheral_multi_color_box",
         "_has_peripheral_udisk",
+        "_has_peripheral_smart_resin_vat",
+        "_has_peripheral_air_purifier",
+        "_resin_temperature",
+        "_release_film",
+        "_camera_is_streaming",
+        "_camera_rotation",
+        "_auto_operations",
+        "_print_self_check",
+        "_last_print_error",
+        "_last_print_finish",
         "_is_bound_to_user",
         "_job_download_progress",
         "_lights",
@@ -322,6 +333,18 @@ class AnycubicPrinter:
         self._has_peripheral_camera: bool | None = None
         self._has_peripheral_multi_color_box: bool | None = None
         self._has_peripheral_udisk: bool | None = None
+        self._has_peripheral_smart_resin_vat: bool | None = None
+        self._has_peripheral_air_purifier: bool | None = None
+        # Resin printers only. None until the printer has said.
+        self._resin_temperature: float | None = None
+        self._release_film: dict[str, int] | None = None
+        self._camera_is_streaming: bool | None = None
+        # None means "whatever this model needs"; a number is someone's choice.
+        self._camera_rotation: int | None = None
+        self._auto_operations: dict[str, dict[str, int]] | None = None
+        self._print_self_check: dict[str, int] | None = None
+        self._last_print_error: dict[str, Any] | None = None
+        self._last_print_finish: dict[str, Any] | None = None
         self._is_bound_to_user: bool = True
         self._job_download_progress: int = 0
         self._aux_fan_speed: int | None = None
@@ -348,6 +371,34 @@ class AnycubicPrinter:
 
     def set_has_peripheral_udisk(self, has_peripheral: bool) -> None:
         self._has_peripheral_udisk = bool(has_peripheral)
+
+    def set_camera_rotation(self, degrees: int | None) -> None:
+        """Choose how far the camera picture is turned, clockwise.
+
+        0, 90, 180 or 270. None goes back to what the model needs by itself --
+        for a printer standing on its side or hanging upside down, the model's
+        own answer is the wrong one and this is how to say so.
+        """
+        if degrees is None:
+            self._camera_rotation = None
+            return
+
+        degrees = int(degrees) % 360
+
+        if degrees not in LAN_CAMERA_ROTATIONS:
+            raise ValueError(
+                f"Camera rotation must be one of {LAN_CAMERA_ROTATIONS}, not {degrees}."
+            )
+
+        self._camera_rotation = degrees
+
+    def set_camera_stream_url(self, url: str | None) -> None:
+        """Say where this printer's camera is served.
+
+        For printers that never name the address themselves: whoever holds the
+        local connection knows the host and can fill it in.
+        """
+        self._camera_stream_url = url
 
     def _set_type_function_ids(self, type_function_ids: list[int] | None) -> None:
         if isinstance(type_function_ids, list):
@@ -1245,6 +1296,54 @@ class AnycubicPrinter:
                 data,
             )
             return
+        elif action == 'start' and state == 'copying':
+            # A resin printer copying the file off its USB stick before it
+            # starts: {'taskid': '-1', 'progress': 50}. The same thing a
+            # download is to a cloud print.
+            data = payload['data']
+            self._is_printing = 2
+            self._set_job_download_progress(data.get('progress'))
+            data.get('taskid')
+            return
+        elif action == 'start' and state == 'waiting':
+            # The job exists but the printer will not go on by itself -- on a
+            # Photon P1 Max this arrived with code 1301 when its pre-print
+            # check failed (an empty vat). Still a job, so still busy; the
+            # code has already been recorded above.
+            data = payload['data']
+            self._is_printing = 2
+            self._update_latest_project_with_mqtt_print_status_data(
+                project_id,
+                AnycubicPrintStatus.Checking,
+                data,
+            )
+            return
+        elif action in ('monitor', 'autoOperation') and state == 'monitoring':
+            # The printer's own checks before and during a print, as a list of
+            # {'name': ..., 'status': ...}: hardware for "monitor", the
+            # pre-print steps (levelling, resin, residue ...) for
+            # "autoOperation". 0 passed, -1 pending, -2 not applicable.
+            data = payload['data']
+            checks = self._print_self_check or {}
+
+            for check in data.get('checkStatus') or []:
+                name = check.get('name')
+
+                if name is not None:
+                    checks[str(name)] = int(check.get('status') or 0)
+
+            self._print_self_check = checks
+            data.get('taskid')
+            return
+        elif action == 'pause' and state == 'unablePause':
+            # Refused, for instance during the pre-print checks (code 9000).
+            # Nothing changed, so nothing is changed here either.
+            _drain(payload['data'])
+            return
+        elif action == 'resume' and state == 'unable-resume':
+            # Refused: there was nothing paused to resume (code 102).
+            _drain(payload['data'])
+            return
         elif action == 'start' and state == 'checking':
             self._is_printing = 2
             self._update_latest_project_with_mqtt_checking_status_data(
@@ -1581,14 +1680,21 @@ class AnycubicPrinter:
         payload: AnycubicConsumableData,
     ) -> None:
         if action == 'listLocal' and state == 'done':
-            data = payload['data']['records']
+            listing = payload['data']
+            # Sent by a Photon P1 Max alongside the records; 0 on the one
+            # listing seen so far, meaning unknown. Read so it is not mistaken
+            # for something unhandled.
+            listing.get('list_mode')
+            data = listing['records']
             self._set_local_file_list(data)
             return
         elif action == 'deleteLocal' and state == 'success':
             # Not Yet Needed
             return
         elif action == 'listUdisk' and state == 'done':
-            data = payload['data']['records']
+            listing = payload['data']
+            listing.get('list_mode')
+            data = listing['records']
             self._set_udisk_file_list(data)
             return
         elif action == 'deleteUdisk' and state == 'success':
@@ -1619,9 +1725,143 @@ class AnycubicPrinter:
             if 'udisk' in data:
                 self.set_has_peripheral_udisk(data['udisk'])
 
+            # Resin printers list their own two.
+            if 'smartResinVat' in data:
+                self._has_peripheral_smart_resin_vat = bool(data['smartResinVat'])
+
+            if 'airpure' in data:
+                self._has_peripheral_air_purifier = bool(data['airpure'])
+
             return
         else:
             raise AnycubicMQTTUnknownUpdate(ErrorsMQTTUpdate.peripherals)
+
+    def _process_mqtt_update_properties(
+        self,
+        action: str,
+        state: str,
+        payload: AnycubicConsumableData,
+    ) -> None:
+        """Readings a resin printer pushes unasked, every few seconds.
+
+        Captured from a Photon P1 Max: ``{'resin_temp': 24.389999}``.
+        """
+        if action != 'report' or state != 'done':
+            raise AnycubicMQTTUnknownUpdate(ErrorsMQTTUpdate.unknown.format('properties'))
+
+        data = payload['data']
+
+        if not data:
+            return
+
+        if 'resin_temp' in data:
+            resin_temp = data['resin_temp']
+            self._resin_temperature = float(resin_temp) if resin_temp is not None else None
+
+    def _process_mqtt_update_release_film(
+        self,
+        action: str,
+        state: str,
+        payload: AnycubicConsumableData,
+    ) -> None:
+        """How worn the release film is.
+
+        Captured from a Photon P1 Max: ``{'times': 0, 'layers': 0, 'status': 0}``.
+        """
+        if action != 'get' or state != 'done':
+            raise AnycubicMQTTUnknownUpdate(ErrorsMQTTUpdate.unknown.format('releaseFilm'))
+
+        data = payload['data']
+
+        if not data:
+            return
+
+        self._release_film = {
+            'times': int(data.get('times') or 0),
+            'layers': int(data.get('layers') or 0),
+            'status': int(data.get('status') or 0),
+        }
+
+    def _process_mqtt_update_video(
+        self,
+        action: str,
+        state: str,
+        payload: AnycubicConsumableData,
+    ) -> None:
+        """Whether the local camera stream is being served.
+
+        A Photon P1 Max answers ``startCapture`` with state ``initSuccess``
+        and ``stopCapture`` with ``done`` (twice: push ended, then stopped),
+        followed by one more ``stopCapture`` in state ``initSuccess`` with
+        code 1404 once nothing is left to stop. None of them carry data.
+        """
+        if action == 'startCapture':
+            if state == 'initSuccess':
+                self._camera_is_streaming = True
+            elif state in ('failed', 'initFailed'):
+                self._camera_is_streaming = False
+        elif action == 'stopCapture':
+            self._camera_is_streaming = False
+        else:
+            raise AnycubicMQTTUnknownUpdate(ErrorsMQTTUpdate.unknown.format('video'))
+
+    def _process_mqtt_update_auto_operation(
+        self,
+        action: str,
+        state: str,
+        payload: AnycubicConsumableData,
+    ) -> None:
+        """Which automatic steps a resin printer has, and which are switched on.
+
+        Sent by a Photon P1 Max when a print is started, as a list of
+        ``{'name': 'levelling', 'support': 1, 'editable': 0, 'status': 1}``.
+        """
+        if action != 'reportStatus' or state != 'done':
+            raise AnycubicMQTTUnknownUpdate(ErrorsMQTTUpdate.unknown.format('autoOperation'))
+
+        data = payload['data']
+
+        if not data:
+            return
+
+        operations: dict[str, dict[str, int]] = {}
+
+        for operation in data.get('currentStatus') or []:
+            name = operation.get('name')
+
+            if name is None:
+                continue
+
+            operations[str(name)] = {
+                'support': int(operation.get('support') or 0),
+                'editable': int(operation.get('editable') or 0),
+                'status': int(operation.get('status') or 0),
+            }
+
+        self._auto_operations = operations
+
+    def _process_mqtt_update_buried(
+        self,
+        action: str,
+        state: str | None,
+        payload: AnycubicConsumableData,
+    ) -> None:
+        """The printer's own event log entries for a job.
+
+        Two have been seen from a Photon P1 Max, neither with a state or a
+        result code: ``PrintError`` when a job stalls (error code, stage,
+        layer) and ``PrintFinish`` when it ends (how it ended, how long it
+        ran). They are the only place the printer says *why* in one message,
+        so they are kept as they come.
+        """
+        data = _drain(payload['data'])
+
+        if action == 'PrintError':
+            self._last_print_error = data
+        elif action == 'PrintFinish':
+            self._last_print_finish = data
+        else:
+            raise AnycubicMQTTUnknownUpdate(ErrorsMQTTUpdate.unknown.format('buried'))
 
     def _process_mqtt_update_light(
         self,
@@ -1909,6 +2149,21 @@ class AnycubicPrinter:
 
         elif msg_type == 'light':
             self._process_mqtt_update_light(action, state, payload)
+
+        elif msg_type == 'properties':
+            self._process_mqtt_update_properties(action, state, payload)
+
+        elif msg_type == 'releaseFilm':
+            self._process_mqtt_update_release_film(action, state, payload)
+
+        elif msg_type == 'video':
+            self._process_mqtt_update_video(action, state, payload)
+
+        elif msg_type == 'autoOperation':
+            self._process_mqtt_update_auto_operation(action, state, payload)
+
+        elif msg_type == 'buried':
+            self._process_mqtt_update_buried(action, state, payload)
 
         elif msg_type == 'info':
             self._process_mqtt_update_info(action, state, payload)
@@ -2336,12 +2591,91 @@ class AnycubicPrinter:
         return self._has_peripheral_udisk
 
     @property
+    def has_peripheral_smart_resin_vat(self) -> bool | None:
+        return self._has_peripheral_smart_resin_vat
+
+    @property
+    def has_peripheral_air_purifier(self) -> bool | None:
+        return self._has_peripheral_air_purifier
+
+    @property
     def connected_peripherals(self) -> dict[str, bool | None]:
-        return {
+        peripherals = {
             "camera": self.has_peripheral_camera,
             "ace": self.has_peripheral_multi_color_box,
             "usb_disk": self.has_peripheral_udisk,
         }
+
+        # Only for printers that mention them, so a filament printer's list
+        # does not grow two entries it will never fill.
+        if self._has_peripheral_smart_resin_vat is not None:
+            peripherals["smart_resin_vat"] = self._has_peripheral_smart_resin_vat
+
+        if self._has_peripheral_air_purifier is not None:
+            peripherals["air_purifier"] = self._has_peripheral_air_purifier
+
+        return peripherals
+
+    @property
+    def resin_temperature(self) -> float | None:
+        """Resin temperature in degrees Celsius, as a resin printer reports it."""
+        return self._resin_temperature
+
+    @property
+    def release_film_times(self) -> int | None:
+        """How many times the release film has been used."""
+        return self._release_film['times'] if self._release_film else None
+
+    @property
+    def release_film_layers(self) -> int | None:
+        """How many layers have been printed on the release film."""
+        return self._release_film['layers'] if self._release_film else None
+
+    @property
+    def release_film_status(self) -> int | None:
+        """The printer's own verdict on the film; 0 on a fresh one."""
+        return self._release_film['status'] if self._release_film else None
+
+    @property
+    def auto_operations(self) -> dict[str, dict[str, int]] | None:
+        """A resin printer's automatic steps: support, editable and status per name."""
+        return self._auto_operations
+
+    @property
+    def print_self_check(self) -> dict[str, int] | None:
+        """The printer's own checks around a print: 0 passed, -1 pending, -2 not applicable."""
+        return self._print_self_check
+
+    @property
+    def last_print_error(self) -> dict[str, Any] | None:
+        """What the printer logged when a job last stalled."""
+        return self._last_print_error
+
+    @property
+    def last_print_finish(self) -> dict[str, Any] | None:
+        """What the printer logged when a job last ended."""
+        return self._last_print_finish
+
+    @property
+    def camera_rotation(self) -> int:
+        """Degrees to turn the camera picture, clockwise, for it to stand upright.
+
+        A chosen value if there is one, otherwise what is known for this
+        model, otherwise 0. The stream itself is never altered; this is for
+        whoever shows it.
+        """
+        if self._camera_rotation is not None:
+            return self._camera_rotation
+
+        try:
+            return LAN_CAMERA_ROTATION_BY_MODEL.get(int(self._machine_type), 0)
+        except (TypeError, ValueError):
+            return 0
+
+    @property
+    def camera_is_streaming(self) -> bool | None:
+        """Whether the local camera stream is being served. None until told."""
+        return self._camera_is_streaming
 
     @property
     def material_type(self) -> AnycubicPrinterMaterialType | str | None:
