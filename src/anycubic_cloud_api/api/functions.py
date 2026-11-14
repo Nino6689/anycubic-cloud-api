@@ -32,6 +32,7 @@ from ..data_models.orders import (
     AnycubicPrinterOrderRequest,
     AnycubicPrinterQueryOrderRequest,
     AnycubicProjectOrderRequest,
+    AnycubicKvsCredentials,
     AnycubicShengwangCredentials,
     AnycubicStartPrintRequestCloud,
     AnycubicStartPrintRequestLocal,
@@ -1066,8 +1067,13 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
         self,
         printer: AnycubicPrinter,
         raw_data: bool = False,
-    ) -> AnycubicShengwangCredentials | None | dict[str, Any]:
-        """Open the cloud camera and return per-session Agora credentials.
+    ) -> AnycubicShengwangCredentials | AnycubicKvsCredentials | None | dict[str, Any]:
+        """Open the cloud camera and return per-session credentials.
+
+        Two transports exist. Most accounts get an Agora (``shengwang``)
+        block; some get only ``data.token``, AWS credentials for a Kinesis
+        Video WebRTC channel (#49). Agora wins when both are present, since
+        that is what the slicer uses whenever the printer supports it.
 
         The credentials are short lived and ``client_uid`` is issued fresh on
         every call, so request them per viewing session rather than caching.
@@ -1094,9 +1100,7 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
         if raw_data:
             return resp
 
-        credentials = AnycubicShengwangCredentials.from_order_response(
-            resp.get('data') or {}
-        )
+        credentials = _camera_credentials(resp.get('data') or {}, printer)
 
         if credentials is not None:
             return credentials
@@ -1122,9 +1126,7 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
             params=order_request.order_request_data
         )
 
-        credentials = AnycubicShengwangCredentials.from_order_response(
-            resp.get('data') or {}
-        )
+        credentials = _camera_credentials(resp.get('data') or {}, printer)
 
         if credentials is None:
             # Genuinely nothing to stream: no camera on this printer.
@@ -2347,3 +2349,14 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
             light_on=light_on,
             brightness=brightness,
         )
+
+
+def _camera_credentials(
+    data: dict[str, Any],
+    printer: AnycubicPrinter,
+) -> AnycubicShengwangCredentials | AnycubicKvsCredentials | None:
+    """Whichever camera transport the cloud offered, Agora first."""
+    return (
+        AnycubicShengwangCredentials.from_order_response(data)
+        or AnycubicKvsCredentials.from_order_response(data, printer.key)
+    )

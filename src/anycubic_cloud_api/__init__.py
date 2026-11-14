@@ -12,7 +12,7 @@ from .const.enums import (
     AnycubicPrinterMaterialType,
     AnycubicPrintStatus,
 )
-from .data_models.orders import AnycubicShengwangCredentials
+from .data_models.orders import AnycubicKvsCredentials, AnycubicShengwangCredentials
 from .data_models.printer import AnycubicPrinter
 from .data_models.printer_properties import AnycubicAxisPosition
 from .data_models.project import AnycubicProject
@@ -63,6 +63,7 @@ __all__ = [
     "AnycubicPrinterMaterialType",
     "AnycubicProject",
     "AnycubicPropertiesNotLoaded",
+    "AnycubicKvsCredentials",
     "AnycubicShengwangCredentials",
     "__version__",
 ]

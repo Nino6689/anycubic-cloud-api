@@ -638,3 +638,113 @@ class AnycubicShengwangCredentials:
             f"device_uid={self._device_uid}, "
             f"encryption_mode={self._encryption_mode})"
         )
+
+
+class AnycubicKvsCredentials:
+    """Temporary AWS credentials for the camera's Kinesis Video WebRTC channel.
+
+    The other cloud camera transport. Some accounts get no Agora
+    (``shengwang``) block from CAMERA_OPEN at all, only ``data.token`` -- an
+    AWS STS triple plus a region (#49). Anycubic Slicer Next views those with
+    the Kinesis Video Streams WebRTC SDK as a VIEWER on the signalling channel
+    named after the printer's ``key``, so that is what ``channel_name`` holds.
+
+    Short lived; request per viewing session, never cache.
+    """
+
+    __slots__ = (
+        "_region",
+        "_access_key_id",
+        "_secret_access_key",
+        "_session_token",
+        "_expiration",
+        "_channel_name",
+        "_msg_id",
+    )
+
+    def __init__(
+        self,
+        region: str,
+        access_key_id: str,
+        secret_access_key: str,
+        session_token: str,
+        channel_name: str,
+        expiration: int | None = None,
+        msg_id: str | None = None,
+    ) -> None:
+        self._region = region
+        self._access_key_id = access_key_id
+        self._secret_access_key = secret_access_key
+        self._session_token = session_token
+        self._channel_name = channel_name
+        self._expiration = expiration
+        self._msg_id = msg_id
+
+    @classmethod
+    def from_order_response(
+        cls,
+        data: dict[str, Any],
+        channel_name: str | None,
+    ) -> AnycubicKvsCredentials | None:
+        block = data.get('token')
+
+        if not isinstance(block, dict) or not channel_name:
+            return None
+
+        region = block.get('region')
+        access_key_id = block.get('tmpSecretId')
+        secret_access_key = block.get('tmpSecretKey')
+        session_token = block.get('sessionToken')
+
+        # The slicer refuses an incomplete set too ("AWS令牌信息不完整").
+        if not (region and access_key_id and secret_access_key and session_token):
+            return None
+
+        expiration = block.get('expiration')
+
+        return cls(
+            region=str(region),
+            access_key_id=str(access_key_id),
+            secret_access_key=str(secret_access_key),
+            session_token=str(session_token),
+            channel_name=str(channel_name),
+            expiration=int(expiration) if isinstance(expiration, (int, float)) else None,
+            msg_id=data.get('msgid'),
+        )
+
+    @property
+    def region(self) -> str:
+        return self._region
+
+    @property
+    def access_key_id(self) -> str:
+        return self._access_key_id
+
+    @property
+    def secret_access_key(self) -> str:
+        return self._secret_access_key
+
+    @property
+    def session_token(self) -> str:
+        return self._session_token
+
+    @property
+    def channel_name(self) -> str:
+        return self._channel_name
+
+    @property
+    def expiration(self) -> int | None:
+        """As sent; the unit is not documented."""
+        return self._expiration
+
+    @property
+    def msg_id(self) -> str | None:
+        return self._msg_id
+
+    def __repr__(self) -> str:
+        # Never render any part of the credentials.
+        return (
+            f"AnycubicKvsCredentials("
+            f"region={self._region}, "
+            f"channel_name={self._channel_name})"
+        )

@@ -17,6 +17,7 @@ from ..exceptions.exceptions import (
     AnycubicInvalidValue,
     AnycubicPropertiesNotLoaded,
 )
+from .consumable import plain_data
 from ..helpers.helpers import (
     time_duration_string_to_delta,
     timedelta_to_dhm_string,
@@ -770,8 +771,9 @@ class AnycubicProject:
                     ErrorsDataParsing.project_settings_json.format(e, new_settings)
                 )
 
-        elif new_settings and isinstance(new_settings, dict):
-            self._settings.update(new_settings)
+        elif new_settings and isinstance(new_settings, Mapping):
+            # Mapping, not dict: from MQTT this is a UserDict wrapper (#48).
+            self._settings.update(plain_data(new_settings))
 
         elif new_settings:
             raise AnycubicDataParsingError(
@@ -792,8 +794,9 @@ class AnycubicProject:
                     ErrorsDataParsing.project_slice_param_json.format(e, new_slice_param)
                 )
 
-        elif new_slice_param and isinstance(new_slice_param, dict):
-            self._slice_param.update(new_slice_param)
+        elif new_slice_param and isinstance(new_slice_param, Mapping):
+            # Mapping, not dict: from MQTT this is a UserDict wrapper (#48).
+            self._slice_param.update(plain_data(new_slice_param))
 
         elif new_slice_param:
             raise AnycubicDataParsingError(
@@ -814,8 +817,9 @@ class AnycubicProject:
                     ErrorsDataParsing.project_slice_result_json.format(e, new_slice_result)
                 )
 
-        elif new_slice_result and isinstance(new_slice_result, dict):
-            self._slice_result.update(new_slice_result)
+        elif new_slice_result and isinstance(new_slice_result, Mapping):
+            # Mapping, not dict: from MQTT this is a UserDict wrapper (#48).
+            self._slice_result.update(plain_data(new_slice_result))
 
         elif new_slice_result:
             raise AnycubicDataParsingError(

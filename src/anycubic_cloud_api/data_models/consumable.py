@@ -114,3 +114,27 @@ class AnycubicConsumableData(UserDict[Any, Any]):
             return self[key]
         except KeyError:
             return default
+
+
+def plain_data(value: Any) -> Any:
+    """Unwrap AnycubicConsumableData into plain dicts and lists, all the way down.
+
+    MQTT payloads arrive wrapped, and every nested dict becomes another
+    AnycubicConsumableData -- a ``UserDict``, which ``isinstance(x, dict)``
+    rejects. Anything stored for later (slice parameters, settings) should be
+    unwrapped first. Reading through the wrapper also marks every key as
+    handled, so the copy doesn't leave the payload looking unread.
+    """
+    if isinstance(value, AnycubicConsumableData):
+        unwrapped: dict[Any, Any] = {}
+        for key in list(value.data.keys()):
+            unwrapped[key] = plain_data(value.get(key))
+            # A nested block only counts as read once it is empty and is read
+            # again -- the same rule _drain() in printer.py follows.
+            value.get(key)
+        return unwrapped
+    if isinstance(value, dict):
+        return {key: plain_data(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [plain_data(item) for item in value]
+    return value

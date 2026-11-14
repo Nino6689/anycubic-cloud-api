@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from ..const.enums import (
@@ -30,7 +31,7 @@ from ..helpers.helpers import (
     timedelta_to_dhm_string,
     timedelta_to_total_hours,
 )
-from .consumable import AnycubicConsumableData
+from .consumable import AnycubicConsumableData, plain_data
 from .files import AnycubicFile
 from .printer_properties import (
     AnycubicAxisPosition,
@@ -130,6 +131,9 @@ class AnycubicPrinter:
         "_latest_error_code",
         "_latest_error_message",
         "_camera_stream_url",
+        # What the printer last said about pushing video to the cloud camera:
+        # initSuccess, pushStarted, pushStopped, pushFailed or initFailed.
+        "_camera_push_state",
         "_file_upload_url",
         "_features",
         "_ai_settings",
@@ -1150,9 +1154,8 @@ class AnycubicPrinter:
             # if a firmware ever does send some -- unread keys raise at the
             # end of dispatch.
             data = payload['data']
-            if isinstance(data, dict):
-                for nested in list(data):
-                    data.get(nested)
+            if isinstance(data, Mapping):
+                plain_data(data)
 
             return
 
@@ -1299,11 +1302,14 @@ class AnycubicPrinter:
             )
             return
         elif action == 'getSliceParam' and state == 'done':
-            data = payload['data']['slice_param']
+            data = payload['data']
             self._update_latest_project_slice_param(
                 project_id,
-                data,
+                plain_data(data['slice_param']),
             )
+            # The rest of the reply (file_key, ams_settings) isn't used, and
+            # isn't an unknown update either.
+            plain_data(data)
             return
         elif action in ['start', 'update'] and state == 'updated':
             data = payload['data']
@@ -1352,7 +1358,13 @@ class AnycubicPrinter:
             # reported as unhandled.
             channel_no, unit_no = data.get('channel_no'), data.get('unit_no')
             if state.endswith('_filament_feeding'):
-                self._apply_active_channel(channel_no, unit_no)
+                # The step names its source: extfilbox_* is the printer's own
+                # feeder, ace_* an ACE. Only here is "no unit" a statement.
+                self._apply_active_channel(
+                    channel_no,
+                    unit_no,
+                    own_feeder=state.startswith('extfilbox_'),
+                )
             return
         elif action in ['start', 'stop'] and state in ['failed']:
             err_msg = payload.get('msg')
@@ -1366,7 +1378,12 @@ class AnycubicPrinter:
         else:
             raise AnycubicMQTTUnknownUpdate(ErrorsMQTTUpdate.job_status)
 
-    def _apply_active_channel(self, channel_no: Any, unit_no: Any = None) -> None:
+    def _apply_active_channel(
+        self,
+        channel_no: Any,
+        unit_no: Any = None,
+        own_feeder: bool = False,
+    ) -> None:
         """Follow the filament channel the printer says it is printing from.
 
         A Kobra X reports each filament change as a print update carrying
@@ -1377,9 +1394,11 @@ class AnycubicPrinter:
 
         With one box the channel can only mean that box. With several, an
         ACE's ``unit_no`` picks it on a printer whose boxes are all ACEs.
-        On a Kobra X with an ACE, which list entry is the printer's own
-        feeder is not yet confirmed, so nothing is guessed there: a wrong
-        slot is worse than a stale one.
+        A Kobra X lists its own feeder first, then its ACEs: confirmed on
+        #33, where the panel's top row (box 0) is the Kobra X and the bottom
+        row the ACE 2 Pro. So ACE unit N is box N there, and box 0 is used
+        only when the step says it fed from the printer's own feeder
+        (``own_feeder``) -- a progress update without a unit doesn't say.
         """
         channel = as_int(channel_no, 0)
         boxes = self._multi_color_box
@@ -1387,11 +1406,19 @@ class AnycubicPrinter:
         if channel < 1 or not boxes:
             return
 
-        if len(boxes) == 1:
+        unit = as_int(unit_no, 0)
+
+        if self._machine_type in _PRINTERS_WITH_OWN_FEEDER and len(boxes) > 1:
+            if own_feeder:
+                box = boxes[0]
+            elif 1 <= unit < len(boxes):
+                box = boxes[unit]
+            else:
+                return
+        elif len(boxes) == 1:
             box = boxes[0]
         else:
-            unit = as_int(unit_no, 0)
-            if unit < 1 or unit > len(boxes) or self._machine_type in _PRINTERS_WITH_OWN_FEEDER:
+            if unit < 1 or unit > len(boxes):
                 return
             box = boxes[unit - 1]
 
@@ -1622,6 +1649,37 @@ class AnycubicPrinter:
             return
         else:
             raise AnycubicMQTTUnknownUpdate(ErrorsMQTTUpdate.peripherals)
+
+    def _process_mqtt_update_video(
+        self,
+        action: str,
+        state: str | None,
+        payload: AnycubicConsumableData,
+    ) -> None:
+        """The printer reporting on the cloud camera push (#49).
+
+        After a camera-open order the printer answers ``startCapture`` with
+        ``initSuccess`` and then ``pushStarted`` once video is going out, or
+        ``initFailed`` / ``pushFailed``. These used to be logged as an unknown
+        update, which hid the one fact that matters when the picture never
+        arrives: whether the printer actually started sending it.
+        """
+        if state:
+            self._camera_push_state = str(state)
+
+        data = payload.get('data')
+
+        if isinstance(data, Mapping):
+            plain_data(data)
+
+    @property
+    def camera_push_state(self) -> str | None:
+        """The printer's last cloud-camera push state, if it has sent one."""
+        return getattr(self, '_camera_push_state', None)
+
+    def clear_camera_push_state(self) -> None:
+        """Forget the last push state, so a new viewing session waits for its own."""
+        self._camera_push_state = None
 
     def _process_mqtt_update_light(
         self,
@@ -1918,6 +1976,9 @@ class AnycubicPrinter:
 
         elif msg_type in ('event', 'printerevent', 'printer_event'):
             self._process_mqtt_update_event(action, state, payload)
+
+        elif msg_type == 'video':
+            self._process_mqtt_update_video(action, state, payload)
 
         else:
             raise AnycubicMQTTUnknownUpdate(ErrorsMQTTUpdate.unknown.format(msg_type))

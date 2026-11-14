@@ -92,15 +92,23 @@ class TestFilamentChange:
 
         assert loaded(printer) == expected
 
-    @pytest.mark.parametrize(("state", "unit_no"), [
-        ("extfilbox_filament_feeding", None),
-        ("ace_filament_feeding", 1),
+    @pytest.mark.parametrize(("state", "unit_no", "expected"), [
+        # The printer's own feeder sends no unit and is box 0, the top row.
+        ("extfilbox_filament_feeding", None, [0, -1]),
+        # ACE unit 1 is box 1, the bottom row (#33, confirmed on hardware).
+        ("ace_filament_feeding", 1, [-1, 0]),
     ])
-    def test_a_kobra_x_with_an_ace_guesses_nothing(self, state, unit_no):
-        """Which list entry is the Kobra X's own feeder is unconfirmed (#33)."""
+    def test_a_kobra_x_with_an_ace_lights_the_right_row(self, state, unit_no, expected):
         printer = make_printer([box(0), box(1)])
 
         feed(printer, state, 1, unit_no)
+
+        assert loaded(printer) == expected
+
+    def test_a_kobra_x_ace_unit_beyond_its_boxes_changes_nothing(self):
+        printer = make_printer([box(0), box(1)])
+
+        feed(printer, "ace_filament_feeding", 1, 2)
 
         assert loaded(printer) == [-1, -1]
 
