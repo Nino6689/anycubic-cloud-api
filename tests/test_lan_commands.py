@@ -162,6 +162,9 @@ class FakeAPI:
     _send_anycubic_order_over_lan = (
         AnycubicAPIFunctions._send_anycubic_order_over_lan
     )
+    _lan_start_ams_settings = staticmethod(
+        AnycubicAPIFunctions._lan_start_ams_settings
+    )
     _send_anycubic_order = AnycubicAPIFunctions._send_anycubic_order
 
 
@@ -527,6 +530,123 @@ class TestOrdersThatBringTheirOwnData:
             "filename": "TEST.pp1m",
             "filepath": "/",
         }
+
+    def test_a_kobra_start_carries_the_ace_mapping_the_printer_needs(self):
+        """Field for field what started a job on a Kobra S1 with an ACE Pro.
+
+        Without ams_settings and project_type the S1 refused the same start
+        with 10115, "The device cannot parse the file".
+        """
+        from anycubic_cloud_api.data_models.orders import (
+            AnycubicProjectCtrlOrderRequest,
+            AnycubicStartPrintRequestLocal,
+        )
+        from anycubic_cloud_api.data_models.printer_properties import (
+            AnycubicMaterialMapping,
+        )
+
+        client = connected_client()
+
+        FakeAPI(client)._send_anycubic_order_over_lan(
+            AnycubicProjectCtrlOrderRequest(
+                order_id=AnycubicOrderID.START_PRINT,
+                printer_id=1,
+                project_id=0,
+                order_data=AnycubicStartPrintRequestLocal(
+                    filename="cube.gcode.3mf", filepath=""
+                ).data,
+                ams_box_mapping=[
+                    AnycubicMaterialMapping(
+                        spool_index=1,
+                        filament_used=3.2,
+                        material_type="PLA",
+                        color_red=255,
+                        color_green=255,
+                        color_blue=255,
+                        paint_index=0,
+                    ),
+                ],
+                print_settings=None,
+            )
+        )
+        topic, message = published(client)
+
+        assert topic.endswith("/print")
+        assert message["action"] == "start"
+        assert message["data"] == {
+            "taskid": "-1",
+            "filetype": 1,
+            "file_key": "",
+            "file_name": "",
+            "task_settings": {"ai_detect": 0, "camera_timelapse": 0},
+            "filename": "cube.gcode.3mf",
+            "filepath": "/",
+            "project_type": 1,
+            "ams_settings": {
+                "use_ams": True,
+                "ams_box_mapping": [
+                    {
+                        "paint_index": 0,
+                        "ams_index": 1,
+                        "paint_color": [255, 255, 255],
+                        "ams_color": [255, 255, 255],
+                        "material_type": "PLA",
+                    },
+                ],
+            },
+        }
+
+    def test_an_empty_mapping_is_a_start_without_one(self):
+        from anycubic_cloud_api.data_models.orders import (
+            AnycubicProjectCtrlOrderRequest,
+            AnycubicStartPrintRequestLocal,
+        )
+
+        client = connected_client()
+
+        FakeAPI(client)._send_anycubic_order_over_lan(
+            AnycubicProjectCtrlOrderRequest(
+                order_id=AnycubicOrderID.START_PRINT,
+                printer_id=1,
+                project_id=0,
+                order_data=AnycubicStartPrintRequestLocal(
+                    filename="cube.gcode", filepath=""
+                ).data,
+                ams_box_mapping=[],
+                print_settings=None,
+            )
+        )
+        _, message = published(client)
+
+        assert "ams_settings" not in message["data"]
+        assert "project_type" not in message["data"]
+
+    def test_only_a_print_start_gains_a_mapping(self):
+        """A pause carries no file, so no mapping, even when one is to hand."""
+        from anycubic_cloud_api.data_models.orders import (
+            AnycubicProjectCtrlOrderRequest,
+        )
+        from anycubic_cloud_api.data_models.printer_properties import (
+            AnycubicMaterialMapping,
+        )
+
+        client = connected_client()
+
+        FakeAPI(client)._send_anycubic_order_over_lan(
+            AnycubicProjectCtrlOrderRequest(
+                order_id=AnycubicOrderID.PAUSE_PRINT,
+                printer_id=1,
+                project_id=42,
+                order_data=None,
+                ams_box_mapping=[
+                    AnycubicMaterialMapping(1, 3.2, "PLA", 255, 255, 255, 0),
+                ],
+                print_settings=None,
+            )
+        )
+        _, message = published(client)
+
+        assert message["data"] == {"taskid": "42"}
 
     @pytest.mark.parametrize("order_id, action", [
         (AnycubicOrderID.LIST_LOCAL_FILES, "listLocal"),
