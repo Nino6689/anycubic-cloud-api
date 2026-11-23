@@ -39,11 +39,23 @@ class AnycubicLANCommand:
     # Locally there is no project id field, so the three print controls and the
     # in-progress settings change carry the task id inside ``data`` instead.
     needs_taskid: bool = False
+    # What the command carries when the order itself brings no data. A file
+    # listing is the case: the cloud order is bare, the local one is ignored
+    # unless it says which folder.
+    default_data: dict[str, object] | None = None
 
 
 # Keyed by cloud order. An order that is absent is one with no verified local
 # form, and is left to the cloud rather than being approximated.
 LAN_ORDER_COMMANDS: dict[int, AnycubicLANCommand] = {
+    # Starting a print is the cloud order's own data plus a task id of "-1":
+    # locally nobody has issued a task yet, and the printer assigns one and
+    # reports it back. Verified against a Photon P1 Max with a file on its
+    # USB stick. Not known for a Kobra; before this the order went to the
+    # cloud, which cannot reach a printer in LAN Mode.
+    AnycubicOrderID.START_PRINT: AnycubicLANCommand(
+        "print", "start", default_data={"taskid": "-1"}
+    ),
     AnycubicOrderID.PAUSE_PRINT: AnycubicLANCommand("print", "pause", True),
     AnycubicOrderID.RESUME_PRINT: AnycubicLANCommand("print", "resume", True),
     AnycubicOrderID.STOP_PRINT: AnycubicLANCommand("print", "stop", True),
@@ -71,6 +83,21 @@ LAN_ORDER_COMMANDS: dict[int, AnycubicLANCommand] = {
     AnycubicOrderID.QUERY_PERIPHERALS: AnycubicLANCommand("peripherie", "query"),
     AnycubicOrderID.GET_LIGHT_STATUS: AnycubicLANCommand("light", "query"),
     AnycubicOrderID.SET_LIGHT_STATUS: AnycubicLANCommand("light", "control"),
+    # Resin printers. Verified against a Photon P1 Max, which answers with
+    # the film's use count. The matching reset is deliberately absent: it has
+    # not been sent to real hardware, and a counter is not something to zero
+    # on a guess.
+    AnycubicOrderID.GET_RELEASE_FILM: AnycubicLANCommand("releaseFilm", "get"),
+    # Verified against a Photon P1 Max only: it lists its storage when given
+    # a path and stays silent without one. Whether a Kobra wants the same is
+    # not known; before this the order went to the cloud, which cannot reach
+    # a printer in LAN Mode at all, so nothing that worked is given up.
+    AnycubicOrderID.LIST_LOCAL_FILES: AnycubicLANCommand(
+        "file", "listLocal", default_data={"path": "/"}
+    ),
+    AnycubicOrderID.LIST_UDISK_FILES: AnycubicLANCommand(
+        "file", "listUdisk", default_data={"path": "/"}
+    ),
 }
 
 

@@ -450,6 +450,42 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
 
         return data
 
+    @staticmethod
+    def _lan_start_ams_settings(
+        order_request: AnycubicBaseOrderRequest,
+    ) -> dict[str, Any] | None:
+        """The filament mapping a local print start carries, or None.
+
+        Locally the cloud order's ``ams_info`` travels inside ``data`` as
+        ``ams_settings``, with only the fields the printer was seen to accept.
+        """
+        if order_request.order_id != AnycubicOrderID.START_PRINT:
+            return None
+
+        if not isinstance(order_request, AnycubicProjectCtrlOrderRequest):
+            return None
+
+        ams_info = order_request.ams_info
+
+        if not ams_info or not ams_info.get('ams_box_mapping'):
+            return None
+
+        mapping_keys = (
+            'paint_index',
+            'ams_index',
+            'paint_color',
+            'ams_color',
+            'material_type',
+        )
+
+        return {
+            'use_ams': True,
+            'ams_box_mapping': [
+                {key: entry.get(key) for key in mapping_keys}
+                for entry in ams_info['ams_box_mapping']
+            ],
+        }
+
     def _send_anycubic_order_over_lan(
         self,
         order_request: AnycubicBaseOrderRequest,
@@ -469,6 +505,23 @@ class AnycubicAPIFunctions(AnycubicAPIBase):
             return None
 
         data = order_request.order_data
+
+        if command.default_data is not None:
+            data = {**command.default_data, **(data or {})}
+
+        ams_settings = self._lan_start_ams_settings(order_request)
+
+        if ams_settings is not None:
+            # A Kobra with an ACE refuses a local start without the order's
+            # filament mapping (10115, "The device cannot parse the file"),
+            # and starts it once the mapping and project_type 1 are added.
+            # Verified on a Kobra S1 with an ACE Pro. An order without a
+            # mapping (a resin printer, or no ACE) is sent as it was.
+            data = {
+                **(data or {}),
+                'project_type': 1,
+                'ams_settings': ams_settings,
+            }
 
         if command.needs_taskid:
             project_id = order_request.project_id

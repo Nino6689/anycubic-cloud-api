@@ -235,6 +235,10 @@ class AnycubicProjectCtrlOrderRequest(AnycubicProjectOrderRequest):
             self._ams_info = None
 
     @property
+    def ams_info(self) -> dict[str, Any] | None:
+        return self._ams_info
+
+    @property
     def order_request_data(self) -> dict[str, Any]:
         return {
             **super().order_request_data,

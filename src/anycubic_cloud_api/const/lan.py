@@ -32,5 +32,22 @@ LAN_HTTP_TIMEOUT = 10
 # see AnycubicLANHandshake for why that is the right trade-off here.
 LAN_MQTT_DEFAULT_PORT = 9883
 
+# Where a printer serves its camera once a local capture has been started.
+# The Kobras name this address themselves in their info report; a Photon P1
+# Max sends no info report and leaves the handshake's "rtsp" field empty, but
+# serves the same FLV stream on the same port.
+LAN_CAMERA_STREAM_PORT = 18088
+LAN_CAMERA_STREAM_PATH = "/flv"
+
+# How far the camera picture has to be turned, clockwise in degrees, to stand
+# upright. A printer mounts its camera wherever it fits and serves the picture
+# as the sensor sees it; nothing in the stream or in any report says which way
+# is up, so it is recorded here per model as it is found. A Photon P1 Max
+# (132) delivers its picture lying on its side.
+LAN_CAMERA_ROTATION_BY_MODEL: dict[int, int] = {
+    132: 270,
+}
+LAN_CAMERA_ROTATIONS = (0, 90, 180, 270)
+
 LAN_REQUIRED_INFO_FIELDS = ("token", "ctrlInfoUrl", "modelId")
 LAN_REQUIRED_BROKER_FIELDS = ("broker", "username", "password", "deviceId")
